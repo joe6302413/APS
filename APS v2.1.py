@@ -53,6 +53,7 @@ for i in data: i.plot()
 location=split(filenames[0])[0]
 APS.save_aps_csv(data,location)
 APS.save_aps_fit_csv(data,location)
+APS.save_homo_error_csv(data,location)
 
 #%% smoothing DOS
 location=split(filenames[0])[0]

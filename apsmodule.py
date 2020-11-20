@@ -26,26 +26,21 @@ from scipy.signal import savgol_filter
 
 __version__='1.0.1'
 
-def save_csv_for_origin(x,y,location,filename=None,datanames=None,header=None):
-    assert all([len(x)==len(y),[[len(i)==len(j)] for i,j in zip(x,y)]]), "Save data have unmatch dimension"
-    assert len(x)==len(datanames), "Unmatch names for data"
-    if type(x)!=list:
-        numberofdata=1
-        data=np.array([x,y]).transpose()
+def save_csv_for_origin(data,location,filename=None,datanames=None,header=None):
+    data_dim=len(data)
+    assert [len(i) for i in data][1:]==[len(i) for i in data][:-1], 'number of data mismatch'
+    assert len(header[0])==data_dim, 'header mismatch data dimension'
+    numberofdata=len(data[0])
+    data=[j for i in zip(*data) for j in i]
+    maxlength=max(len(i) for i in data)
+    data=np.transpose([np.append(i,[None]*(maxlength-len(i))) for i in data])
+    if datanames==None:
+        datanames=[['data'+str(i) for i in range(numberofdata) for j in range(data_dim)]]
     else:
-        numberofdata=len(x)
-        data=[]
-        maxlength=max(len(i) for i in x)
-        for i in range(numberofdata):
-            fix_x=np.concatenate((x[i],[None]*(maxlength-len(x[i])) ))
-            fix_y=np.concatenate((y[i],[None]*(maxlength-len(y[i])) ))
-            data.append(fix_x)
-            data.append(fix_y)
-        data=np.transpose(data)
-        
-    datanames=[[j for i in range(numberofdata) for j in (None,'data'+str(i+1))] if datanames==None else [j for i in range(numberofdata) for j in (None,datanames[i])],[None for i in range(2*numberofdata)]]
+        datanames=[[j for i in datanames for j in ([None]+[i]*(data_dim-1))]]
+        # datanames=[[i for i in datanames for j in range(data_dim)]]
     if header==None:
-        header=[['x'+str(i//2+1) if i%2==0 else 'y'+str(i//2+1) for i in range(numberofdata*2)],[None for i in range(2*numberofdata)]]
+        header=datanames+[[None]*numberofdata*data_dim]
     else:
         header=[i*numberofdata for i in header]
     with open(join(location,str(filename)+'.csv'),'w',newline='') as f:
@@ -136,7 +131,8 @@ class APS:
         for i,j in [[i,j] for i in range(startindex,stopindex) for j in range(i+gap,stopindex)]:
             [slope,intercept],[[var_slope,_],[_,var_intercept]]=np.polyfit(self.energydata[i:j],self.APSdata[i:j]-self.baseline,1,cov=True)
             homo_sig=np.sqrt(var_slope**2/slope**2+var_intercept**2/intercept**2)
-            if homo_sig<self.homo_sig:  self.lin_start_index,self.lin_stop_index,self.lin_par,self.homo_sig=i,j,(slope,intercept),homo_sig
+            if homo_sig<self.homo_sig:
+                self.lin_start_index,self.lin_stop_index,self.lin_par,self.homo_sig=i,j,(slope,intercept),homo_sig
         if self.homo_sig==np.inf:
             plt.figure()
             self.plot()
@@ -152,7 +148,7 @@ class APS:
             plt.xlim([self.energydata[0],self.energydata[-1]])
             plt.ylim([-0.5,self.APSdata[-1]-self.baseline])
             plt.title(self.name[:-8])
-            plt.text(.5, .95, 'HOMO=%1.2f\u00b1 %0.3f%%' %(self.homo,self.homo_sig), style='italic',bbox={'facecolor': 'yellow', 'alpha': 0.5},horizontalalignment='center',verticalalignment='center',transform=ax.transAxes)
+            plt.text(.5, .95, 'HOMO=%1.2f\u00b1 %0.3f%%' %(self.homo,100*self.homo_sig), style='italic',bbox={'facecolor': 'yellow', 'alpha': 0.5},horizontalalignment='center',verticalalignment='center',transform=ax.transAxes)
             ax.axhline(y=0, color='k',ls='--')
             plt.xlabel('Energy(eV)')
             if self.sqrt==False:
@@ -195,27 +191,34 @@ class APS:
                     
     @staticmethod
     def save_aps_csv(data,location,trunc=-8,filename='APS',):
-        datanames=[i.name[:-8] for i in data]
+        datanames=[i.name[:trunc] for i in data]
         origin_header=[['Energy','Photoemission\\+(1/3)'],['eV','a.u.']] if all([i.sqrt==False for i in data]) else [['Energy','Photoemission\\+(1/2)'],['eV','a.u.']]
         x,y=[i.energydata for i in data],[i.APSdata-i.baseline for i in data]
-        save_csv_for_origin(x,y,location,filename,datanames,origin_header)
+        save_csv_for_origin((x,y),location,filename,datanames,origin_header)
 
     @staticmethod
     def save_aps_fit_csv(data,location,trunc=-8,filename='APS_linear_regression'):
         origin_header=[['Energy','Photoemission\\+(1/3)'],['eV','a.u.']] if all([i.sqrt==False for i in data]) else [['Energy','Photoemission\\+(1/2)'],['eV','a.u.']]
-        datanames=[i.name[:-8] for i in data]
-        x,y=[[i.homo,i.energydata[i.lin_stop_index]] for i in data],[[0,np.polyval(i.lin_par,i.energydata[i.lin_stop_index])] for i in data]
-        save_csv_for_origin(x,y,location,filename,datanames,origin_header)
-        # x,y=[[i.homo for i in data],[i.homo_sig for i in data]]
-        # origin_header_stat=[['Energy','Photoemission\\+(1/3)'],['eV','a.u.']] if all([i.sqrt==False for i in data]) else [['Energy','Photoemission\\+(1/2)'],['eV','a.u.']]
-        # save_csv_for_origin(x,y,location,filename+'stat',datanames,origin_header_stat)
+        datanames=[i.name[:trunc] for i in data]
+        x=[np.array([i.homo,i.energydata[i.lin_stop_index]]) for i in data]
+        y=[np.array([0,np.polyval(i.lin_par,i.energydata[i.lin_stop_index])]) for i in data]
+        save_csv_for_origin((x,y),location,filename,datanames,origin_header)
     
+    @staticmethod
+    def save_homo_error_csv(data,location,trunc=-8,filename='APS_HOMO'):
+        origin_header=[['Material','Energy','HOMO sig'],[None,'eV','eV']]
+        datanames=['HOMO']
+        x=[[i.name[:trunc] for i in data]]
+        y=[[i.homo for i in data]]
+        z=[[i.homo_sig*i.homo for i in data]]
+        save_csv_for_origin((x,y,z),location,filename,datanames,origin_header)
+        
     @staticmethod
     def save_DOS_csv(data,location,trunc=-8,filename='DOS'):
         origin_header=[['Energy','DOS'],['eV','a.u.']]
-        datanames=[i.name[:-8] for i in data]
+        datanames=[i.name[:trunc] for i in data]
         x,y=[i.energydata for i in data],[i.DOS for i in data]
-        save_csv_for_origin(x,y,location,filename,datanames,origin_header)
+        save_csv_for_origin((x,y),location,filename,datanames,origin_header)
         
     @staticmethod
     def gaussian(x,c,center):
