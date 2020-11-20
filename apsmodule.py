@@ -91,7 +91,10 @@ class APS:
             
     def plot(self):
         plt.grid(True,which='both',axis='x')
-        fig=plt.plot(self.energydata,self.APSdata-self.baseline,label=self.name[:-8])
+        if hasattr(self,'baseline'):
+            fig=plt.plot(self.energydata,self.APSdata-self.baseline,label=self.name[:-8])
+        else:
+            fig=plt.plot(self.energydata,self.APSdata,label=self.name[-8])
         plt.axhline(y=0, color='k',ls='--')
         if hasattr(self,'lin_par'):
             plt.plot([self.homo,self.energydata[self.lin_stop_index]],[0,np.polyval(self.lin_par,self.energydata[self.lin_stop_index])],'--',c=fig[0]._color)
@@ -122,7 +125,7 @@ class APS:
         plt.xlabel('Energy(eV)')
         plt.ylabel('DOS (a.u.)')
 
-    def analyze(self, sig_lower_bound=3,sig_upper_bound=np.inf,smoothness=2):
+    def analyze(self, sig_lower_bound=0.5,sig_upper_bound=np.inf,smoothness=2,plot=True):
         if smoothness==1:   gap=5
         elif smoothness==2: gap=7
         else: gap=10
@@ -139,24 +142,25 @@ class APS:
             self.plot()
             raise Exception("Fitting fail!!! Rechoose fitting condition.")
         self.homo=-self.lin_par[1]/self.lin_par[0]
-        fig=plt.figure()
-        ax=fig.gca()
-        ax.grid(True,which='both',axis='x')
-        plt.plot([self.homo,self.energydata[self.lin_stop_index]],[0,np.polyval(self.lin_par,self.energydata[self.lin_stop_index])],'--',label='linear fit')
-        plt.plot(self.energydata,self.APSdata-self.baseline,label='APS data')
-        fig.legend()
-        plt.xlim([self.energydata[0],self.energydata[-1]])
-        plt.ylim([-0.5,self.APSdata[-1]-self.baseline])
-        plt.title(self.name[:-8])
-        plt.text(.5, .95, 'HOMO=%1.2f\u00b1 %0.3f%%' %(self.homo,self.homo_sig), style='italic',bbox={'facecolor': 'yellow', 'alpha': 0.5},horizontalalignment='center',verticalalignment='center',transform=ax.transAxes)
-        ax.axhline(y=0, color='k',ls='--')
-        plt.xlabel('Energy(eV)')
-        if self.sqrt==False:
-            plt.ylabel('Photoemission^(1/3) (a.u.)')
-        else:
-            plt.ylabel('Photoemission((1/2) (a.u.)')
+        if plot:
+            fig=plt.figure()
+            ax=fig.gca()
+            ax.grid(True,which='both',axis='x')
+            plt.plot([self.homo,self.energydata[self.lin_stop_index]],[0,np.polyval(self.lin_par,self.energydata[self.lin_stop_index])],'--',label='linear fit')
+            plt.plot(self.energydata,self.APSdata-self.baseline,label='APS data')
+            fig.legend()
+            plt.xlim([self.energydata[0],self.energydata[-1]])
+            plt.ylim([-0.5,self.APSdata[-1]-self.baseline])
+            plt.title(self.name[:-8])
+            plt.text(.5, .95, 'HOMO=%1.2f\u00b1 %0.3f%%' %(self.homo,self.homo_sig), style='italic',bbox={'facecolor': 'yellow', 'alpha': 0.5},horizontalalignment='center',verticalalignment='center',transform=ax.transAxes)
+            ax.axhline(y=0, color='k',ls='--')
+            plt.xlabel('Energy(eV)')
+            if self.sqrt==False:
+                plt.ylabel('Photoemission^(1/3) (a.u.)')
+            else:
+                plt.ylabel('Photoemission((1/2) (a.u.)')
         if self.lin_stop_index-self.lin_start_index==gap: print(self.name+' is using the minimum number of points\t')
-        
+            
     def APSfit(self,p0=[0.12,0.2,5],bounds=([0.1,-0.5,0.01],[0.5,0.5,1e4]),repick=True):
         self.p0=p0
         self.bounds=bounds
@@ -182,7 +186,8 @@ class APS:
         for file in filenames:
             with open(file,newline='') as f:
                 reader=csv.reader(f)
-                numberoflines=len(list(open(file)))
+                numberoflines=len(list(f))
+                f.seek(0)
                 acceptlines=range(1,numberoflines-14)
                 temp=np.array([[float(j[save_index[0]]),float(j[save_index[1]])] for i,j in enumerate(reader) if i in acceptlines if float(j[3])<1e4])
             data.append(cls(temp[:,0],temp[:,1],split(file)[1],sqrt))
@@ -201,6 +206,9 @@ class APS:
         datanames=[i.name[:-8] for i in data]
         x,y=[[i.homo,i.energydata[i.lin_stop_index]] for i in data],[[0,np.polyval(i.lin_par,i.energydata[i.lin_stop_index])] for i in data]
         save_csv_for_origin(x,y,location,filename,datanames,origin_header)
+        # x,y=[[i.homo for i in data],[i.homo_sig for i in data]]
+        # origin_header_stat=[['Energy','Photoemission\\+(1/3)'],['eV','a.u.']] if all([i.sqrt==False for i in data]) else [['Energy','Photoemission\\+(1/2)'],['eV','a.u.']]
+        # save_csv_for_origin(x,y,location,filename+'stat',datanames,origin_header_stat)
     
     @staticmethod
     def save_DOS_csv(data,location,trunc=-8,filename='DOS'):
@@ -222,17 +230,29 @@ class APS:
         return np.cumsum([scale*integrate.quad(APS.mofun,x[i-1],x[i],args=(c,shift,MOenergy))[0] if i!=0 else 0 for i in range(len(x))])
     
 class dwf:
-    def __init__(self,time,dwf,name='no_name'):
+    def __init__(self,time,dwf,name='no_name',cal=False):
         self.time=time
         self.dwf=dwf
         self.name=name
+        self.cal=cal
     
     def plot(self):
-        plt.grid(True,which='both',axis='x')
-        plt.plot(self.time,self.dwf,label=self.name[:-8])
+        plt.grid(True,which='both',axis='both')
+        if self.cal:
+            plt.plot(self.time,-self.dwf,label=self.name[:-8])
+            plt.ylabel('Fermi Level (eV)')
+        else:
+            plt.plot(self.time,self.dwf,label=self.name[:-8])
+            plt.ylabel('CPD (meV)')
         plt.legend()
         plt.xlabel('Time(s)')
-        plt.ylabel('Fermi Level (eV)')
+            
+    def stat(self,length=200):
+        stop_index=len(self.time)
+        start_index=stop_index-next(i for i,j in enumerate(self.time[::-1]-self.time[-1]) if j<-length)
+        self.average_dwf=np.average(self.dwf[start_index:stop_index])
+        self.std_dwf=np.std(self.dwf[start_index:stop_index])
+        self.length=length
             
     @classmethod
     def import_from_files(cls,filenames):
@@ -241,8 +261,24 @@ class dwf:
         for file in filenames:
             with open(file,newline='') as f:
                 reader=csv.reader(f)
-                numberoflines=len(list(open(file)))
+                numberoflines=len(list(f))
+                f.seek(0)
                 acceptlines=range(1,numberoflines-31)
                 temp=np.array([[float(j[save_index[0]]),float(j[save_index[1]])] for i,j in enumerate(reader) if i in acceptlines])
             data.append(cls(temp[:,0],temp[:,1],split(file)[1]))
         return data
+
+class calibrate:
+    def __init__(self,ref_APS,ref_dwf):
+        if not hasattr(ref_APS,'homo'):
+            ref_APS.analyze(plot=False)
+        if not hasattr(ref_dwf,'average_dwf'):
+            ref_dwf.stat()
+        self.tip_dwf=ref_APS.homo-ref_dwf.average_dwf/1000
+    
+    def cal(self,data):
+        for i in data:
+            i.dwf=i.dwf/1000+self.tip_dwf
+            i.cal=True
+            i.stat()
+            
