@@ -44,7 +44,7 @@ data+=APS.import_from_files(filenames)
 
 #%% analyze data
 for i in data:
-    i.analyze(0,6.5)
+    i.analyze(5)
 #%% overlay all the data
 fig=plt.figure(999)
 for i in data: i.plot()
@@ -54,7 +54,9 @@ location=split(filenames[0])[0]
 APS.save_aps_csv(data,location)
 APS.save_aps_fit_csv(data,location)
 
-#%% smoothing DOS and save into csv
+#%% smoothing DOS
 location=split(filenames[0])[0]
 _=[i.DOSsmooth(11,3) for i in data]
+
+#%% Saving DOS into csv
 APS.save_DOS_csv(data,location)
