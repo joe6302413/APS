@@ -27,7 +27,6 @@ Last editing time: 12/11/2020
 import matplotlib.pyplot as plt, tkinter as tk, tkinter.filedialog
 from os.path import split
 from apsmodule import APS
-# from scipy.stats import linregress
 
 #%% clean filenames
 filenames=[]
@@ -44,12 +43,12 @@ data+=APS.import_from_files(filenames)
 
 #%% analyze data
 for i in data:
-    i.analyze(5)
+    i.analyze()
 #%% overlay all the data
 fig=plt.figure(999)
 for i in data: i.plot()
 
-#%% writing csv for origin to read
+#%% Saving APS and APS fit and HOMO with error
 location=split(filenames[0])[0]
 APS.save_aps_csv(data,location)
 APS.save_aps_fit_csv(data,location)
@@ -57,7 +56,7 @@ APS.save_homo_error_csv(data,location)
 
 #%% smoothing DOS
 location=split(filenames[0])[0]
-_=[i.DOSsmooth(11,3) for i in data]
+_=[i.DOSsmooth(11,3,plot=True) for i in data]
 
 #%% Saving DOS into csv
 APS.save_DOS_csv(data,location)
