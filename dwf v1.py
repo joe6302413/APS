@@ -2,7 +2,7 @@
 """
 Created on Thur Nov 19 2020
 
-A script that reads in APS.DAT and automatic analyse all spectrums.
+A script that reads in dwf.DAT and automatic analyse all spectrums.
 The script include multiple parts:
     1. 
 Please run the session you are looking for or following the flow.
@@ -11,18 +11,17 @@ Before modifying the module please consult with Yi-Chun
 
 Note:
     1.
-    For the filename I use my personal style of material_APS.DAT. And this affects how the program truncate the name.
-    To change the truncation length just use APS.save_aps_(fit_)csv(data,location,trunc=-n) for n word truncation.
+    For the filename I use my personal style of material_dwf.DAT. And this affects how the program truncate the name.
+    To change the truncation length just use dwf.save_dwf_(stat_)csv(data,location,trunc=-n) for n word truncation.
     Again for my personall usage, the default folder direction is to my onedrive APS folder.
 
-Last editing time: 19/11/2020
+Last editing time: 03/12/2020
 @author: Yi-Chun Chin    joe6302413@gmail.com
 """
 #%% Packages and libraries
 import matplotlib.pyplot as plt, tkinter as tk, tkinter.filedialog
 from os.path import split
 from apsmodule import dwf, APS, calibrate
-# from scipy.stats import linregress
 
 #%% Clean filenames
 filenames=[]
