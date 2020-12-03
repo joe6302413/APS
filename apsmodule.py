@@ -116,20 +116,20 @@ class APS:
         plt.xlabel('Energy(eV)')
         plt.ylabel('DOS (a.u.)')
 
-    def analyze(self, sig_lower_bound=0.5,sig_upper_bound=np.inf,smoothness=2,plot=True):
+    def analyze(self, std_lower_bound=0.5,std_upper_bound=np.inf,smoothness=2,plot=True):
         if smoothness==1:   gap=5
         elif smoothness==2: gap=7
         else: gap=10
         if not hasattr(self, 'baseline'):  self.find_baseline(plot=False)
-        startindex=len(self.energydata)-next(i for i,j in enumerate(self.APSdata[::-1]-self.baseline) if j<sig_lower_bound)-1
-        stopindex=len(self.energydata)-next(i for i,j in enumerate(self.APSdata[::-1]-self.baseline) if j<sig_upper_bound)
-        self.homo_sig=np.inf
+        startindex=len(self.energydata)-next(i for i,j in enumerate(self.APSdata[::-1]-self.baseline) if j<std_lower_bound)-1
+        stopindex=len(self.energydata)-next(i for i,j in enumerate(self.APSdata[::-1]-self.baseline) if j<std_upper_bound)
+        self.std_homo=np.inf
         for i,j in [[i,j] for i in range(startindex,stopindex) for j in range(i+gap,stopindex)]:
             [slope,intercept],[[var_slope,_],[_,var_intercept]]=np.polyfit(self.energydata[i:j],self.APSdata[i:j]-self.baseline,1,cov=True)
-            homo_sig=np.sqrt(var_slope**2/slope**2+var_intercept**2/intercept**2)
-            if homo_sig<self.homo_sig:
-                self.lin_start_index,self.lin_stop_index,self.lin_par,self.homo_sig=i,j,(slope,intercept),homo_sig
-        if self.homo_sig==np.inf:
+            std_homo=np.sqrt(var_slope**2/slope**2+var_intercept**2/intercept**2)
+            if std_homo<self.std_homo:
+                self.lin_start_index,self.lin_stop_index,self.lin_par,self.std_homo=i,j,(slope,intercept),std_homo
+        if self.std_homo==np.inf:
             plt.figure()
             self.plot()
             raise Exception("Fitting fail!!! Rechoose fitting condition.")
@@ -139,7 +139,7 @@ class APS:
             ax=fig.gca()
             self.plot()
             plt.title(self.name)
-            plt.text(.5, .95, 'HOMO=%1.2f\u00b1 %0.3f%%' %(self.homo,100*self.homo_sig), style='italic',bbox={'facecolor': 'yellow', 'alpha': 0.5},horizontalalignment='center',verticalalignment='center',transform=ax.transAxes)
+            plt.text(.5, .95, 'HOMO=%1.2f\u00b1 %0.3f%%' %(self.homo,100*self.std_homo), style='italic',bbox={'facecolor': 'yellow', 'alpha': 0.5},horizontalalignment='center',verticalalignment='center',transform=ax.transAxes)
         if self.lin_stop_index-self.lin_start_index==gap: print(self.name+' is using the minimum number of points\t')
             
     def APSfit(self,p0=[0.12,0.2,5],bounds=([0.1,-0.5,0.01],[0.5,0.5,1e4]),repick=True):
@@ -192,11 +192,11 @@ class APS:
     
     @staticmethod
     def save_homo_error_csv(data,location,trunc=-8,filename='APS_HOMO'):
-        origin_header=[['Material','Energy','HOMO sig'],[None,'eV','eV']]
+        origin_header=[['Material','Energy','HOMO std'],[None,'eV','eV']]
         datanames=['HOMO']
         x=[[i.name[:trunc] for i in data]]
         y=[[-i.homo for i in data]]
-        z=[[i.homo_sig*i.homo for i in data]]
+        z=[[i.std_homo*i.homo for i in data]]
         save_csv_for_origin((x,y,z),location,filename,datanames,origin_header)
         
     @staticmethod
