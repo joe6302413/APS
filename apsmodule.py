@@ -19,7 +19,7 @@ Last editing time: 12/11/2020
 
 import matplotlib.pyplot as plt, csv
 import numpy as np
-from scipy.optimize import curve_fit, fmin
+from scipy.optimize import curve_fit, shgo
 from scipy import integrate
 from os.path import split,join
 from scipy.signal import savgol_filter
@@ -71,9 +71,9 @@ class APS:
     def read_gaussian_MO(self,MOenergy):
         self.MOenergy=MOenergy
         
-    def find_baseline(self,init_baseline=0,plot=True):
-        baseline=fmin(lambda x: -np.sum(APS.gaussian(x,0.3,self.APSdata)),init_baseline,disp=False)
-        self.baseline=baseline
+    def find_baseline(self,baseline_bounds=(0,5),plot=True):
+        baseline_res=shgo(lambda x: -APS.mofun(x,0.3,self.APSdata),[baseline_bounds])
+        self.baseline=baseline_res.x
         if plot==True:
             plt.figure()
             plt.plot(self.energydata,self.APSdata-self.baseline)
@@ -94,7 +94,7 @@ class APS:
         if hasattr(self,'lin_par'):
             plt.plot([self.homo,self.energydata[self.lin_stop_index]],[0,np.polyval(self.lin_par,self.energydata[self.lin_stop_index])],'--',c=fig[0]._color)
         if hasattr(self,'fit_par') and hasattr(self,'APSfit'):
-            plt.plot(self.energydata,self.APSfit,label='fit: c=%1.4f, shift=%1.4f, scale=%2.1f' %tuple(self.par))
+            plt.plot(self.energydata,self.APSfit,label='fit: c=%1.4f, shift=%1.4f, scale=%2.1f' %tuple(self.fit_par))
         plt.legend()
         plt.xlabel('Energy(eV)')
         if self.sqrt==False:
@@ -164,11 +164,11 @@ class APS:
             self.pick_range()
         if not hasattr(self, 'MOenergy'):
             self.read_gaussian_MO(np.array(input("Input MOs from Gaussian:\n").split(),'float'))
-        self.fit_par,_ = curve_fit(lambda x,c,shift,scale: self.apsfun(x,c,shift,scale,self.MOenergy),self.energydata[self.minindex:self.maxindex],self.APSdata[self.minindex:self.maxindex],p0=[0.12,0.2,5],bounds=([0.1,-0.5,0.01],[0.5,0.5,1e4]),absolute_sigma=True,ftol=1e-12)
+        self.fit_par,_ = curve_fit(lambda x,c,scale,shift: self.apsfun(x,c,scale,self.MOenergy-shift),self.energydata[self.minindex:self.maxindex],self.APSdata[self.minindex:self.maxindex],p0=[0.12,5,0.2],bounds=([0.1,0.01,-0.5],[0.5,1e4,0.5]),absolute_sigma=True,ftol=1e-12)
         plt.figure()
         plt.plot(self.energydata,self.APSdata,'o',label='experiment')
-        self.APSfit=self.apsfun(self.energydata,*self.par,self.MOenergy)
-        plt.plot(self.energydata,self.APSfit,label='fit: c=%1.4f, shift=%1.4f, scale=%2.1f' %tuple(self.par))
+        self.APSfit=self.apsfun(self.energydata,*self.fit_par[:-1],self.MOenergy-self.fit_par[-1])
+        plt.plot(self.energydata,self.APSfit,label='fit: c=%1.4f, shift=%1.4f, scale=%2.1f' %tuple(self.fit_par))
         plt.xlabel('Energy (eV)')
         plt.ylabel('Photoemission^1/3 (a.u.)')
         plt.legend()
@@ -182,9 +182,10 @@ class APS:
         for file in filenames:
             with open(file,newline='') as f:
                 reader=csv.reader(f)
-                numberoflines=len(list(f))
+                for i,j in enumerate(f):
+                    if j[:3]==' WF': stopindex=i
                 f.seek(0)
-                acceptlines=range(1,numberoflines-14)
+                acceptlines=range(1,stopindex)
                 temp=np.array([[float(j[save_index[0]]),float(j[save_index[1]])] for i,j in enumerate(reader) if i in acceptlines if float(j[3])<1e4])
             data.append(cls(temp[:,0],temp[:,1],split(file)[1],sqrt))
         return data
@@ -209,7 +210,7 @@ class APS:
         origin_header=[['Material','Energy','HOMO sig'],[None,'eV','eV']]
         datanames=['HOMO']
         x=[[i.name[:trunc] for i in data]]
-        y=[[i.homo for i in data]]
+        y=[[-i.homo for i in data]]
         z=[[i.homo_sig*i.homo for i in data]]
         save_csv_for_origin((x,y,z),location,filename,datanames,origin_header)
         
@@ -225,12 +226,12 @@ class APS:
         return np.exp(-(x-center)**2/2/c**2)/c/(2*np.pi)**0.5
     
     @staticmethod
-    def mofun(x,c,shift,MOenergy):
-        return np.sum([APS.gaussian(x,c,i+shift) for i in MOenergy],axis=0)
+    def mofun(x,c,MOenergy):
+        return np.sum([APS.gaussian(x,c,i) for i in MOenergy],axis=0)
     
     @staticmethod
-    def apsfun(x,c,shift,scale,MOenergy):
-        return np.cumsum([scale*integrate.quad(APS.mofun,x[i-1],x[i],args=(c,shift,MOenergy))[0] if i!=0 else 0 for i in range(len(x))])
+    def apsfun(x,c,scale,MOenergy):
+        return np.cumsum([scale*integrate.quad(APS.mofun,x[i-1],x[i],args=(c,MOenergy))[0] if i!=0 else 0 for i in range(len(x))])
     
 class dwf:
     def __init__(self,time,dwf,name='no_name',cal=False):
@@ -264,24 +265,50 @@ class dwf:
         for file in filenames:
             with open(file,newline='') as f:
                 reader=csv.reader(f)
-                numberoflines=len(list(f))
+                for i,j in enumerate(reader):
+                    if len(j)==1:
+                        stopindex=i
+                        break
                 f.seek(0)
-                acceptlines=range(1,numberoflines-31)
+                acceptlines=range(1,stopindex)
                 temp=np.array([[float(j[save_index[0]]),float(j[save_index[1]])] for i,j in enumerate(reader) if i in acceptlines])
             data.append(cls(temp[:,0],temp[:,1],split(file)[1]))
         return data
-
+    
+    @staticmethod
+    def save_dwf_csv(data,location,trunc=-8,filename='DWF'):
+        origin_header=[['Time','E\-(F)'],[None,'eV']] if all([i.cal for i in data]) else [['Time','DWF'],[None,'meV']]
+        datanames=[i.name[:trunc] for i in data]
+        x=[i.time for i in data]
+        y=[i.dwf for i in data]
+        save_csv_for_origin((x,y),location,filename,datanames,origin_header)
+    
+    @staticmethod
+    def save_dwf_stat_csv(data,location,trunc=-8,filename='DWF_stat'):
+        if not all([hasattr(i,'average_dwf') for i in data]):
+            _=[i.stat() for i in data]
+        if all([i.cal for i in data]):
+            origin_header=[['Material','Energy','E\-(F) std'],[None,'eV','eV']]  
+            datanames=['E\-(F)']
+        else:
+            origin_header=[['Material','Energy','DWF std'],[None,'eV','eV']]
+            datanames=['DWF']
+        x=[[i.name[:trunc] for i in data]]
+        y=[[i.average_dwf for i in data]]
+        z=[[i.std_dwf for i in data]]
+        save_csv_for_origin((x,y,z),location,filename,datanames,origin_header)
+        
 class calibrate:
     def __init__(self,ref_APS,ref_dwf):
         if not hasattr(ref_APS,'homo'):
             ref_APS.analyze(plot=False)
         if not hasattr(ref_dwf,'average_dwf'):
             ref_dwf.stat()
-        self.tip_dwf=ref_APS.homo-ref_dwf.average_dwf/1000
+        self.tip_dwf=-ref_APS.homo+ref_dwf.average_dwf/1000
     
     def cal(self,data):
         for i in data:
-            i.dwf=i.dwf/1000+self.tip_dwf
+            i.dwf=-i.dwf/1000+self.tip_dwf
             i.cal=True
             i.stat()
             
