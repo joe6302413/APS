@@ -18,36 +18,44 @@ Note:
 Last editing time: 19/11/2020
 @author: Yi-Chun Chin    joe6302413@gmail.com
 """
-#%% packages and libraries
+#%% Packages and libraries
 import matplotlib.pyplot as plt, tkinter as tk, tkinter.filedialog
 from os.path import split
 from apsmodule import dwf, APS, calibrate
 # from scipy.stats import linregress
 
-#%% clean filenames
+#%% Clean filenames
 filenames=[]
 
-#%% choose files
+#%% Choose files
 root=tk.Tk()
 root.withdraw()
 filenames+=tkinter.filedialog.askopenfilenames(parent=root,initialdir='C:/Users/yc6017/OneDrive - Imperial College London/Data/APS', title='Please select dwf files',filetypes=[('DAT','.DAT')])
 location=split(filenames[0])[0]
 
-#%% load files into data
+#%% Load files into data
 plt.close('all')
 data=[]
 data+=dwf.import_from_files(filenames)
 
-#%% choose ref APS,dwf and load it
+#%% Choose ref APS,dwf and load it
 root=tk.Tk()
 root.withdraw()
 ref_APS_file=[tkinter.filedialog.askopenfilename(parent=root,initialdir=location, title='Please select ref APS files',filetypes=[('DAT','.DAT')])]
-[ref_APS]=APS.import_from_files(ref_APS_file)
+[ref_APS]=APS.import_from_files(ref_APS_file,sqrt=True)
 
 root=tk.Tk()
 root.withdraw()
 ref_dwf_file=[tkinter.filedialog.askopenfilename(parent=root,initialdir=location, title='Please select ref dwf files',filetypes=[('DAT','.DAT')])]
 [ref_dwf]=dwf.import_from_files(ref_dwf_file)
 
+#%% Calibrate dwf data
 cal=calibrate(ref_APS,ref_dwf)
 cal.cal(data)
+
+#%% Calculate statistic data
+for i in data:  i.stat()
+
+#%% Save calibrated DWF into file
+dwf.save_dwf_csv(data,location)
+dwf.save_dwf_stat_csv(data,location)
