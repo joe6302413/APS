@@ -24,7 +24,7 @@ from scipy import integrate
 from os.path import split,join
 from scipy.signal import savgol_filter
 
-__version__='1.0.1'
+__version__='1.0.2'
 
 def save_csv_for_origin(data,location,filename=None,datanames=None,header=None):
     data_dim=len(data)
