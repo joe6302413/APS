@@ -53,8 +53,8 @@ cal=calibrate(ref_APS,ref_dwf)
 cal.cal(data)
 
 #%% Calculate statistic data
-for i in data:  i.stat()
+for i in data:  i.dwf_stat()
 
 #%% Save calibrated DWF into file
-dwf.save_dwf_csv(data,location)
+dwf.save_csv(data,location)
 dwf.save_dwf_stat_csv(data,location)
