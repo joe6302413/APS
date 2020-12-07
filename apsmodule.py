@@ -235,7 +235,7 @@ class dwf:
         plt.xlabel('Time(s)')
         plt.autoscale(enable=True,axis='both',tight=True)
             
-    def stat(self,length=200):
+    def dwf_stat(self,length=200):
         stop_index=len(self.time)
         start_index=stop_index-next(i for i,j in enumerate(self.time[::-1]-self.time[-1]) if j<-length)
         self.average_CPD=np.average(self.CPDdata[start_index:stop_index])
@@ -290,7 +290,7 @@ class calibrate:
         self.tip_dwf=-ref_APS.homo+ref_dwf.average_CPD/1000
     
     def cal(self,data):
-        assert all([i.__class__.__name__==dwf for i in data]),'Calibrate only applicable to CPD measurements'
+        assert all([i.__class__.__name__=='dwf' for i in data]),'Calibrate only applicable to CPD measurements'
         for i in data:
             i.CPDdata=-i.CPDdata/1000+self.tip_dwf
             i.cal=True
