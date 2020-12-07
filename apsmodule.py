@@ -89,14 +89,15 @@ class APS:
             plt.plot([self.homo,self.energydata[self.lin_stop_index]],[0,np.polyval(self.lin_par,self.energydata[self.lin_stop_index])],'--',c=fig[0]._color)
         if hasattr(self,'fit_par') and hasattr(self,'APSfit'):
             plt.plot(self.energydata,self.APSfit,label='fit: c=%1.4f, shift=%1.4f, scale=%2.1f' %tuple(self.fit_par))
-        plt.xlim([self.energydata[0],self.energydata[-1]])
-        plt.ylim([-0.5,self.APSdata[-1]-self.baseline])
+        # plt.xlim([self.energydata[0],self.energydata[-1]])
+        # plt.ylim([-0.5,self.APSdata[-1]-self.baseline])
         plt.legend()
         plt.xlabel('Energy(eV)')
         if self.sqrt==False:
             plt.ylabel('Photoemission^(1/3) (a.u.)')
         else:
             plt.ylabel('Photoemission^(1/2) (a.u.)')
+        plt.autoscale(enable=True,axis='both',tight=True)
             
     def DOSsmooth(self,*args,plot=False):
         self.DOS_origin=self.DOS
@@ -235,6 +236,7 @@ class dwf:
             plt.ylabel('CPD (meV)')
         plt.legend()
         plt.xlabel('Time(s)')
+        plt.autoscale(enable=True,axis='both',tight=True)
             
     def stat(self,length=200):
         stop_index=len(self.time)
