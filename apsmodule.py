@@ -92,11 +92,11 @@ class APS:
         # plt.xlim([self.energydata[0],self.energydata[-1]])
         # plt.ylim([-0.5,self.APSdata[-1]-self.baseline])
         plt.legend()
-        plt.xlabel('Energy(eV)')
+        plt.xlabel('Energy (eV)')
         if self.sqrt==False:
-            plt.ylabel('Photoemission^(1/3) (a.u.)')
+            plt.ylabel('Photoemission^(1/3)  (a.u.)')
         else:
-            plt.ylabel('Photoemission^(1/2) (a.u.)')
+            plt.ylabel('Photoemission^(1/2)  (a.u.)')
         plt.autoscale(enable=True,axis='both',tight=True)
             
     def DOSsmooth(self,*args,plot=False):
@@ -221,6 +221,7 @@ class APS:
     
 class dwf:
     cal=False
+    data_type,data_unit='CPD','meV'
     def __init__(self,time,CPDdata,name='no_name'):
         self.time=np.array(time)
         self.CPDdata=np.array(CPDdata)
@@ -228,12 +229,8 @@ class dwf:
     
     def plot(self,trunc=-8):
         plt.grid(True,which='both',axis='both')
-        if self.cal:
-            plt.plot(self.time,self.CPDdata,label=self.name[:trunc])
-            plt.ylabel('Fermi Level (eV)')
-        else:
-            plt.plot(self.time,self.CPDdata,label=self.name[:trunc])
-            plt.ylabel('CPD (meV)')
+        plt.plot(self.time,self.CPDdata,label=self.name[:trunc])
+        plt.ylabel(self.data_type+' ('+self.data_unit+')')
         plt.legend()
         plt.xlabel('Time(s)')
         plt.autoscale(enable=True,axis='both',tight=True)
@@ -263,8 +260,9 @@ class dwf:
         return data
     
     @staticmethod
-    def save_dwf_csv(data,location,trunc=-8,filename='DWF'):
-        origin_header=[['Time','E\-(F)'],[None,'eV']] if all([i.cal for i in data]) else [['Time','CPD'],[None,'meV']]
+    def save_csv(data,location,trunc=-8,filename='DWF'):
+        assert all([data[i].__class__==data[i+1].__class__ for i in range(len(data)-1)]), 'Data are not the same class objects'
+        origin_header=[['Time',data[0].data_type],[None,data[0].data_unit]]
         datanames=[i.name[:trunc] for i in data]
         x=[i.time for i in data]
         y=[i.CPDdata for i in data]
@@ -272,14 +270,12 @@ class dwf:
     
     @staticmethod
     def save_dwf_stat_csv(data,location,trunc=-8,filename='DWF_stat'):
-        if not all([hasattr(i,'average_dwf') for i in data]):
+        assert all([data[i].__class__==data[i+1].__class__ for i in range(len(data)-1)]), 'Data are not the same class objects'
+        if not all([hasattr(i,'average_CPD') for i in data]):
+            print('Use last 200sec data for statistic analysis')
             _=[i.stat() for i in data]
-        if all([i.cal for i in data]):
-            origin_header=[['Material','Energy','E\-(F) std'],[None,'eV','eV']]  
-            datanames=['E\-(F)']
-        else:
-            origin_header=[['Material','Energy','CPD std'],[None,'eV','eV']]
-            datanames=['CPD']
+        origin_header=[['Material','Energy',data[0].data_type+' std'],[None,data[0].data_unit,data[0].data_unit]]  
+        datanames=[data[0].data_type]
         x=[[i.name[:trunc] for i in data]]
         y=[[i.average_CPD for i in data]]
         z=[[i.std_CPD for i in data]]
@@ -294,24 +290,22 @@ class calibrate:
         self.tip_dwf=-ref_APS.homo+ref_dwf.average_CPD/1000
     
     def cal(self,data):
+        assert all([i.__class__.__name__==dwf for i in data]),'Calibrate only applicable to CPD measurements'
         for i in data:
             i.CPDdata=-i.CPDdata/1000+self.tip_dwf
             i.cal=True
+            i.data_type,i.data_unit='Fermi level','eV'
             i.stat()
 
 class spv(dwf):
     spv_bg_cal=False
+    data_type,data_unit='raw SPV','meV'
+    
     def cal_background(self,bgtime):
         self.bgtime=bgtime
         self.spv_bg_cal=True
         stop_index=next(i for i,j in enumerate(self.time) if j>bgtime)
         self.bg_cpd=np.average(self.CPDdata[:stop_index])
-        self.CPD_bg_cal=self.CPDdata-self.bg_cpd
+        self.CPDdata=self.CPDdata-self.bg_cpd
+        self.data_type='SPV'
         
-    @staticmethod
-    def save_SPV_csv(data,location,trunc=-8,filename='SPV'):
-        origin_header=[['Time','SPV'],[None,'eV']] if all([i.cal for i in data]) else [['Time','SPV'],[None,'meV']]
-        datanames=[i.name[:trunc] for i in data]
-        x=[i.time for i in data]
-        y=[i.CPD_bg_cal for i in data] if all([i.spv_bg_cal for i in data]) else [i.CPDdata for i in data]
-        save_csv_for_origin((x,y),location,filename,datanames,origin_header)
