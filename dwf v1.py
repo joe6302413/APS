@@ -56,5 +56,5 @@ cal.cal(data)
 for i in data:  i.dwf_stat()
 
 #%% Save calibrated DWF into file
-dwf.save_csv(data,location)
+dwf.save_csv(data,location,filename='DWF')
 dwf.save_dwf_stat_csv(data,location)
