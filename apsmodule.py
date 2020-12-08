@@ -104,8 +104,9 @@ class APS:
         self.DOS=savgol_filter(self.DOS,*args)
         if plot:
             plt.figure()
-            self.DOSplot()
             plt.plot(self.energydata,self.DOS_origin,label='no smooth')
+            self.DOSplot()
+            plt.legend()
         
     def DOSplot(self,trunc=-8):
         plt.grid(True,which='both',axis='x')
@@ -113,8 +114,9 @@ class APS:
         startindex=len(self.energydata)-next(i for i,j in enumerate(self.APSdata[::-1]-self.baseline) if j<0)-5
         _=plt.plot(self.energydata[startindex:],self.DOS[startindex:],label=self.name[:trunc])
         plt.axhline(y=0, color='k',ls='--')
+        plt.autoscale(enable=True,axis='both',tight=True)
         plt.legend()
-        plt.xlabel('Energy(eV)')
+        plt.xlabel('Energy (eV)')
         plt.ylabel('DOS (a.u.)')
 
     def analyze(self, std_lower_bound=0.5,std_upper_bound=np.inf,smoothness=2,plot=True):
@@ -220,12 +222,13 @@ class APS:
         return np.cumsum([scale*integrate.quad(APS.mofun,x[i-1],x[i],args=(c,MOenergy))[0] if i!=0 else 0 for i in range(len(x))])
     
 class dwf:
-    cal=False
-    data_type,data_unit='CPD','meV'
+
     def __init__(self,time,CPDdata,name='no_name'):
         self.time=np.array(time)
         self.CPDdata=np.array(CPDdata)
         self.name=name
+        self.cal=False
+        self.data_type,self.data_unit='CPD','meV'
     
     def plot(self,trunc=-8):
         plt.grid(True,which='both',axis='both')
@@ -298,14 +301,75 @@ class calibrate:
             i.stat()
 
 class spv(dwf):
-    spv_bg_cal=False
-    data_type,data_unit='raw SPV','meV'
     
-    def cal_background(self,bgtime):
-        self.bgtime=bgtime
-        self.spv_bg_cal=True
-        stop_index=next(i for i,j in enumerate(self.time) if j>bgtime)
-        self.bg_cpd=np.average(self.CPDdata[:stop_index])
+    def __init__(self,time,CPDdata,timemap,name='no_name'):
+        dwf.__init__(self,time,CPDdata,name=name)
+        self.timeline=np.cumsum(timemap)
+        self.timeline_index=[next(j-1 for j,k in enumerate(self.time) if k>i)
+                             for i in self.timeline[:-1]]
+        self.timeline_index.insert(0,0)
+        self.timeline_index.append(len(self.time)-1)
+        self.bg_cal=False
+        self.data_type,self.data_unit='raw SPV','meV'
+        
+    def cal_background(self,plot=False):
+        self.bg_cpd=np.average(self.CPDdata[0:self.timeline_index[1]])
         self.CPDdata=self.CPDdata-self.bg_cpd
         self.data_type='SPV'
+        self.bg_cal=True
+        if plot:
+            plt.figure()
+            self.plot()
+            self.plot_highlight()
         
+    def normalize(self,timezone=1,plot=False):
+        if not self.bg_cal:
+            self.cal_background()
+        self.norm_zone=timezone
+        scale_fac=max(abs(self.CPDdata[self.timeline_index[timezone]:self.timeline_index[timezone+1]]))
+        self.norm_spv=self.CPDdata/scale_fac
+        if plot:
+            plt.figure()
+            self.norm_plot()
+    
+    def plot(self,trunc=-8):
+        dwf.plot(self,trunc=-8)
+        self.plot_highlight()
+        
+    def norm_plot(self,trunc=-8):
+        assert hasattr(self,'norm_spv'),'Didn\'t noramlized yet'
+        plt.grid(True,which='both',axis='both')
+        plt.plot(self.time,self.norm_spv,label=self.name[:trunc])
+        plt.ylabel('normalized SPV (a.u.)')
+        plt.legend()
+        plt.xlabel('Time(s)')
+        plt.autoscale(enable=True,axis='both',tight=True)
+        self.plot_highlight()
+        
+    def plot_highlight(self):
+        for i in range(len(self.timeline)//2):
+            plt.axvspan(self.timeline[2*i],self.timeline[2*i+1],color='yellow',alpha=0.5)
+
+    @classmethod
+    def import_from_files(cls,filenames,timemap):
+        data=dwf.import_from_files(filenames)
+        data=cls.dwf_to_spv(data,timemap)
+        return data
+    
+    @staticmethod
+    def dwf_to_spv(data,timemap):
+        assert all(i.__class__.__name__=='dwf' for i in data),'Only dwf class can turn into spv class'
+        data=[spv(i.time,i.CPDdata,timemap,i.name) for i in data]
+        return data
+    
+    @staticmethod
+    def save_norm_spv_csv(data,location,trunc=-8,filename='Normalized_SPV'):
+        assert all([data[i].__class__==data[i+1].__class__ for i in range(len(data)-1)]), 'Data are not the same class objects'
+        if not all([hasattr(i,'norm_spv') for i in data]):
+            print('Use first light on for normalization')
+            _=[i.normalize() for i in data]
+        origin_header=[['Time','Normalized SPV'],[None,'a.u.']]
+        datanames=[i.name[:trunc] for i in data]
+        x=[i.time for i in data]
+        y=[i.norm_spv for i in data]
+        save_csv_for_origin((x,y),location,filename,datanames,origin_header)
