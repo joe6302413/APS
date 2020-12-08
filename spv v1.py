@@ -21,8 +21,7 @@ Last editing time: 03/12/2020
 #%% Packages and libraries
 import matplotlib.pyplot as plt, tkinter as tk, tkinter.filedialog
 from os.path import split
-from apsmodule import dwf
-
+from apsmodule import spv
 
 #%% Clean filenames
 filenames=[]
@@ -36,11 +35,16 @@ location=split(filenames[0])[0]
 #%% Load files into data
 plt.close('all')
 data=[]
-data+=dwf.import_from_files(filenames)
+data+=spv.import_from_files(filenames,(20,100,150,100,150))
 
-#%% Calculate statistic data
-for i in data:  i.stat()
+#%% Calibrate background SPV
+for i in data:  i.cal_background(plot=True)
 
-#%% Save calibrated DWF into file
-dwf.save_dwf_csv(data,location)
-dwf.save_dwf_stat_csv(data,location)
+#%% Save SPV into csv
+spv.save_csv(data,location,filename='SPV')
+
+#%% Normalized SPV
+for i in data: i.normalize(plot=True)
+
+#%% Save normalized SPV into csv
+spv.save_norm_spv_csv(data,location)
