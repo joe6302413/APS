@@ -33,6 +33,7 @@ filenames+=tkinter.filedialog.askopenfilenames(parent=root,initialdir='C:/Users/
 location=split(filenames[0])[0]
 
 #%% Load files into data
+filenames=sorted(filenames)
 plt.close('all')
 data=[]
 data+=dwf.import_from_files(filenames)
@@ -41,15 +42,20 @@ data+=dwf.import_from_files(filenames)
 root=tk.Tk()
 root.withdraw()
 ref_APS_file=[tkinter.filedialog.askopenfilename(parent=root,initialdir=location, title='Please select ref APS files',filetypes=[('DAT','.DAT')])]
-[ref_APS]=APS.import_from_files(ref_APS_file,sqrt=True)
+
 
 root=tk.Tk()
 root.withdraw()
 ref_dwf_file=[tkinter.filedialog.askopenfilename(parent=root,initialdir=location, title='Please select ref dwf files',filetypes=[('DAT','.DAT')])]
+
+#%% Load ref APS and ref dwf
+[ref_APS]=APS.import_from_files(ref_APS_file,sqrt=True)
 [ref_dwf]=dwf.import_from_files(ref_dwf_file)
 
+#%% Load calibration object
+cal=calibrate(ref_APS,ref_dwf,10,50)
+
 #%% Calibrate dwf data
-cal=calibrate(ref_APS,ref_dwf)
 cal.cal(data)
 
 #%% Calculate statistic data

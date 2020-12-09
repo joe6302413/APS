@@ -29,22 +29,23 @@ filenames=[]
 #%% Choose files
 root=tk.Tk()
 root.withdraw()
-filenames+=tkinter.filedialog.askopenfilenames(parent=root,initialdir='C:/Users/yc6017/OneDrive - Imperial College London/Data/APS', title='Please select dwf files',filetypes=[('DAT','.DAT')])
+filenames+=tkinter.filedialog.askopenfilenames(parent=root,initialdir='C:/Users/yc6017/OneDrive - Imperial College London/Data/APS', title='Please select SPV files',filetypes=[('DAT','.DAT')])
 location=split(filenames[0])[0]
 
 #%% Load files into data
+filenames=sorted(filenames)
 plt.close('all')
 data=[]
 data+=spv.import_from_files(filenames,(20,100,150,100,150))
 
 #%% Calibrate background SPV
-for i in data:  i.cal_background(plot=True)
+for i in data:  i.cal_background(plot=False)
 
 #%% Save SPV into csv
 spv.save_csv(data,location,filename='SPV')
 
 #%% Normalized SPV
-for i in data: i.normalize(plot=True)
+for i in data: i.normalize(plot=False)
 
 #%% Save normalized SPV into csv
 spv.save_norm_spv_csv(data,location)
