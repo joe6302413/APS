@@ -119,13 +119,13 @@ class APS:
         plt.xlabel('Energy (eV)')
         plt.ylabel('DOS (a.u.)')
 
-    def analyze(self, std_lower_bound=0.5,std_upper_bound=np.inf,smoothness=2,plot=True):
+    def analyze(self, fit_lower_bound=0.5,fit_upper_bound=np.inf,smoothness=2,plot=True):
         if smoothness==1:   gap=5
         elif smoothness==2: gap=7
         else: gap=10
         if not hasattr(self, 'baseline'):  self.find_baseline(plot=False)
-        startindex=len(self.energydata)-next(i for i,j in enumerate(self.APSdata[::-1]-self.baseline) if j<std_lower_bound)-1
-        stopindex=len(self.energydata)-next(i for i,j in enumerate(self.APSdata[::-1]-self.baseline) if j<std_upper_bound)
+        startindex=len(self.energydata)-next(i for i,j in enumerate(self.APSdata[::-1]-self.baseline) if j<fit_lower_bound)-1
+        stopindex=len(self.energydata)-next(i for i,j in enumerate(self.APSdata[::-1]-self.baseline) if j<fit_upper_bound)
         self.std_homo=np.inf
         for i,j in [[i,j] for i in range(startindex,stopindex) for j in range(i+gap,stopindex)]:
             [slope,intercept],[[var_slope,_],[_,var_intercept]]=np.polyfit(self.energydata[i:j],self.APSdata[i:j]-self.baseline,1,cov=True)
@@ -276,7 +276,7 @@ class dwf:
         assert all([data[i].__class__==data[i+1].__class__ for i in range(len(data)-1)]), 'Data are not the same class objects'
         if not all([hasattr(i,'average_CPD') for i in data]):
             print('Use last 200sec data for statistic analysis')
-            _=[i.stat() for i in data]
+            _=[i.dwf_stat() for i in data]
         origin_header=[['Material','Energy',data[0].data_type+' std'],[None,data[0].data_unit,data[0].data_unit]]  
         datanames=[data[0].data_type]
         x=[[i.name[:trunc] for i in data]]
@@ -285,11 +285,10 @@ class dwf:
         save_csv_for_origin((x,y,z),location,filename,datanames,origin_header)
         
 class calibrate:
-    def __init__(self,ref_APS,ref_dwf):
-        if not hasattr(ref_APS,'homo'):
-            ref_APS.analyze(plot=False)
+    def __init__(self,ref_APS,ref_dwf,fit_lower_bound=10,fit_upper_bound=50):
+        ref_APS.analyze(fit_lower_bound=fit_lower_bound,fit_upper_bound=fit_upper_bound,smoothness=3)
         if not hasattr(ref_dwf,'average_CPD'):
-            ref_dwf.stat()
+            ref_dwf.dwf_stat()
         self.tip_dwf=-ref_APS.homo+ref_dwf.average_CPD/1000
     
     def cal(self,data):
@@ -298,7 +297,7 @@ class calibrate:
             i.CPDdata=-i.CPDdata/1000+self.tip_dwf
             i.cal=True
             i.data_type,i.data_unit='Fermi level','eV'
-            i.stat()
+            i.dwf_stat()
 
 class spv(dwf):
     
@@ -320,7 +319,6 @@ class spv(dwf):
         if plot:
             plt.figure()
             self.plot()
-            self.plot_highlight()
         
     def normalize(self,timezone=1,plot=False):
         if not self.bg_cal:
