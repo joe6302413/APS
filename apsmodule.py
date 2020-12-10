@@ -222,14 +222,19 @@ class APS:
         return np.cumsum([scale*integrate.quad(APS.mofun,x[i-1],x[i],args=(c,MOenergy))[0] if i!=0 else 0 for i in range(len(x))])
     
 class dwf:
-
-    def __init__(self,time,CPDdata,name='no_name'):
+    allowed_kwargs=[]
+    def __init__(self,time,CPDdata,name='no_name',**kwargs):
         self.time=np.array(time)
         self.CPDdata=np.array(CPDdata)
         self.name=name
         self.cal=False
         self.data_type,self.data_unit='CPD','meV'
-    
+        try:
+            self.__dict__.update((i,kwargs[i]) for i in self.allowed_kwargs)
+        except KeyError:
+            raise Exception('expect key words '+','.join(self.allowed_kwargs)
+                            + ' missing')
+        
     def plot(self,trunc=-8):
         plt.grid(True,which='both',axis='both')
         plt.plot(self.time,self.CPDdata,label=self.name[:trunc])
@@ -246,7 +251,7 @@ class dwf:
         self.length=length
             
     @classmethod
-    def import_from_files(cls,filenames):
+    def import_from_files(cls,filenames,**kwargs):
         data=[]
         save_index=[-3,2]
         for file in filenames:
@@ -259,7 +264,7 @@ class dwf:
                 f.seek(0)
                 acceptlines=range(1,stopindex)
                 temp=np.array([[float(j[save_index[0]]),float(j[save_index[1]])] for i,j in enumerate(reader) if i in acceptlines])
-            data.append(cls(temp[:,0],temp[:,1],split(file)[1]))
+            data.append(cls(temp[:,0],temp[:,1],split(file)[1],**kwargs))
         return data
     
     @staticmethod
@@ -300,10 +305,10 @@ class calibrate:
             i.dwf_stat()
 
 class spv(dwf):
-    
-    def __init__(self,time,CPDdata,timemap,name='no_name'):
-        dwf.__init__(self,time,CPDdata,name=name)
-        self.timeline=np.cumsum(timemap)
+    allowed_kwargs=['timemap']
+    def __init__(self,time,CPDdata,name='no_name',**kwargs):
+        super().__init__(time,CPDdata,name=name,**kwargs)
+        self.timeline=np.cumsum(self.timemap)
         self.timeline_index=[next(j-1 for j,k in enumerate(self.time) if k>i)
                              for i in self.timeline[:-1]]
         self.timeline_index.insert(0,0)
@@ -347,18 +352,6 @@ class spv(dwf):
     def plot_highlight(self):
         for i in range(len(self.timeline)//2):
             plt.axvspan(self.timeline[2*i],self.timeline[2*i+1],color='yellow',alpha=0.5)
-
-    @classmethod
-    def import_from_files(cls,filenames,timemap):
-        data=dwf.import_from_files(filenames)
-        data=cls.dwf_to_spv(data,timemap)
-        return data
-    
-    @staticmethod
-    def dwf_to_spv(data,timemap):
-        assert all(i.__class__.__name__=='dwf' for i in data),'Only dwf class can turn into spv class'
-        data=[spv(i.time,i.CPDdata,timemap,i.name) for i in data]
-        return data
     
     @staticmethod
     def save_norm_spv_csv(data,location,trunc=-8,filename='Normalized_SPV'):
