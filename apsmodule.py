@@ -6,6 +6,9 @@ The module for measurements done by APS04.
 It includes a function for general csv saving in origin format.
 The class APS is for handling APS signals, cube(sqr)-root v.s. energy.
 The APS class has multiple methods for different physical quantities including HOMO level fit.
+The DWF class handles all variations of CPD measurements.
+Calibrate class takes into APS and DWF object for calibrating factor building.
+Build DWF related measurements based on root class of DWF such as SPV.
 
 Note:
     1.
@@ -24,7 +27,7 @@ from scipy import integrate
 from os.path import split,join
 from scipy.signal import savgol_filter
 
-__version__='1.0.2'
+__version__='1.1'
 
 def save_csv_for_origin(data,location,filename=None,datanames=None,header=None):
     data_dim=len(data)
@@ -49,8 +52,28 @@ def save_csv_for_origin(data,location,filename=None,datanames=None,header=None):
         writer.writerows(datanames)
         writer.writerows(data)
 
+def linear_combine(coeff,data):
+    """
+    Return linear combination of two data sets with common overlaps as [x,y].
+    ----
+    coeff: list or tuple of n-coefficients as (c1,c2,...) for n-data
+    data: list of 2-dimension as [[x1,y1],[x2,y2],...] where
+        x and y are positive monotonic numpy array 
+    """
+    datax=[i[0] for i in data]
+    datay=[i[1] for i in data]
+    x_min=np.max([i[0] for i in datax])
+    x_max=np.min([i[-1] for i in datax])
+    for i in range(len(datax)):
+        min_index=next(i for i,j in enumerate(datax[i]) if j==x_min)
+        max_index=next(i for i,j in enumerate(datax[i]) if j==x_max)
+        datay[i]=datay[i][min_index:max_index+1]
+    datax=datax[-1][min_index:max_index+1]
+    datay=np.dot(coeff,datay)
+    return datax,datay
+    
 class APS:
-    def __init__(self,energydata,APSdata,Name='no_name',sqrt=False):
+    def __init__(self,energydata,APSdata,sqrt=False,Name='no_name'):
         self.energydata=np.array(energydata)
         self.APSdata=np.array(APSdata)
         self.DOS=np.gradient(APSdata,energydata)
@@ -89,8 +112,6 @@ class APS:
             plt.plot([self.homo,self.energydata[self.lin_stop_index]],[0,np.polyval(self.lin_par,self.energydata[self.lin_stop_index])],'--',c=fig[0]._color)
         if hasattr(self,'fit_par') and hasattr(self,'APSfit'):
             plt.plot(self.energydata,self.APSfit,label='fit: c=%1.4f, shift=%1.4f, scale=%2.1f' %tuple(self.fit_par))
-        # plt.xlim([self.energydata[0],self.energydata[-1]])
-        # plt.ylim([-0.5,self.APSdata[-1]-self.baseline])
         plt.legend()
         plt.xlabel('Energy (eV)')
         if self.sqrt==False:
@@ -129,7 +150,7 @@ class APS:
         self.std_homo=np.inf
         for i,j in [[i,j] for i in range(startindex,stopindex) for j in range(i+gap,stopindex)]:
             [slope,intercept],[[var_slope,_],[_,var_intercept]]=np.polyfit(self.energydata[i:j],self.APSdata[i:j]-self.baseline,1,cov=True)
-            std_homo=np.sqrt(var_slope**2/slope**2+var_intercept**2/intercept**2)
+            std_homo=np.sqrt(var_slope/slope**2+var_intercept/intercept**2)
             if std_homo<self.std_homo:
                 self.lin_start_index,self.lin_stop_index,self.lin_par,self.std_homo=i,j,(slope,intercept),std_homo
         if self.std_homo==np.inf:
@@ -144,7 +165,13 @@ class APS:
             plt.title(self.name)
             plt.text(.5, .95, 'HOMO=%1.2f\u00b1 %0.3f%%' %(self.homo,100*self.std_homo), style='italic',bbox={'facecolor': 'yellow', 'alpha': 0.5},horizontalalignment='center',verticalalignment='center',transform=ax.transAxes)
         if self.lin_stop_index-self.lin_start_index==gap: print(self.name+' is using the minimum number of points\t')
-            
+    def DOSfit(self,p0):
+        self.pick_range()
+        fit,_=curve_fit(lambda x,scale,c,center: scale*APS.gaussian(x,c,center),self.energydata[self.minindex:self.maxindex],self.DOS[self.minindex:self.maxindex],p0)
+        plt.figure()
+        plt.plot(self.energydata[self.minindex:self.maxindex],fit[0]*APS.gaussian(self.energydata[self.minindex:self.maxindex],*fit[1:3]),label='fit')
+        self.DOSplot()
+
     def APSfit(self,p0=[0.12,0.2,5],bounds=([0.1,-0.5,0.01],[0.5,0.5,1e4]),repick=True):
         self.p0=p0
         self.bounds=bounds
@@ -175,9 +202,24 @@ class APS:
                 f.seek(0)
                 acceptlines=range(1,stopindex)
                 temp=np.array([[float(j[save_index[0]]),float(j[save_index[1]])] for i,j in enumerate(reader) if i in acceptlines if float(j[3])<1e4])
-            data.append(cls(temp[:,0],temp[:,1],split(file)[1],sqrt))
+            data.append(cls(temp[:,0],temp[:,1],sqrt,split(file)[1]))
         return data
-                    
+    @classmethod
+    def APS_from_DOS(cls,energydata,DOS,sqrt,Name='no_name'):
+        
+        APS(energydata,APSdata,sqrt,Name)
+
+    @staticmethod
+    def linear_combine_DOS(data,coeff,plot=False):
+        assert len(data)==len(coeff), 'Dimension mismatch'
+        assert all(data[i].sqrt==data[i+1].sqrt for i in range(len(data)-1)),'data has to be the same sqrt type'
+        lc_energy,lc_DOS=linear_combine(coeff,[[i.energydata,i.DOS] 
+                                               for i in data])
+        
+        APS(lc_energy,lc_DOS,sqrt,Name)
+        if plot:
+            pass
+
     @staticmethod
     def save_aps_csv(data,location,trunc=-8,filename='APS',):
         datanames=[i.name[:trunc] for i in data]
