@@ -52,26 +52,44 @@ def save_csv_for_origin(data,location,filename=None,datanames=None,header=None):
         writer.writerows(datanames)
         writer.writerows(data)
 
-def linear_combine(coeff,data):
-    """
-    Return linear combination of two data sets with common overlaps as [x,y].
-    ----
-    coeff: list or tuple of n-coefficients as (c1,c2,...) for n-data
-    data: list of 2-dimension as [[x1,y1],[x2,y2],...] where
-        x and y are positive monotonic numpy array 
-    """
-    datax=[i[0] for i in data]
-    datay=[i[1] for i in data]
-    x_min=np.max([i[0] for i in datax])
-    x_max=np.min([i[-1] for i in datax])
-    for i in range(len(datax)):
-        min_index=next(i for i,j in enumerate(datax[i]) if j==x_min)
-        max_index=next(i for i,j in enumerate(datax[i]) if j==x_max)
-        datay[i]=datay[i][min_index:max_index+1]
-    datax=datax[-1][min_index:max_index+1]
-    datay=np.dot(coeff,datay)
-    return datax,datay
+def find_overlap(x,y):
+    '''
+    Given 2D x=[x1,x2,...] and 2D y=[y1,y2,...] of each array xn or yn is a
+    positive monotonic numpy array.
+    Output x' and y' for which x' is a numpy array of the common x
+    And y' is a 2D list such that y'=[y1',y2',...] with numpy array yn' 
+    contains the value of yn with resspect to xn'
+    '''
+    x_min=np.max([i[0] for i in x])
+    x_max=np.min([i[-1] for i in x])
+    for i in range(len(x)):
+        min_index=next(l for l,k in enumerate(x[i]) if k==x_min)
+        max_index=next(l for l,k in enumerate(x[i]) if k==x_max)
+        y[i]=y[i][min_index:max_index+1]
+    x=x[-1][min_index:max_index+1]
+    return x,y
     
+def inv_gradient(x,g,y0=0):
+    '''
+    An inverse function of numpy.gradient.
+    g=np.gradient(y,x) == y=inv_gradient(x,g,y0=y[0])
+    
+    Output numpy array y
+    '''
+    length=len(g)
+    if length!=len(x):
+        raise Exception('length of x and gradient should '+
+                        'have match length')
+    xdiff=np.diff(x)
+    xdiff2=xdiff[:-1]+xdiff[1:]
+    y=np.array([y0,g[0]*xdiff[0]+y0])
+    s=g[0]
+    for i in range(1,length-2):
+        s=(g[i]-s*xdiff[i]/xdiff2[i-1])*xdiff2[i-1]/xdiff[i-1]
+        y=np.append(y,y[i]+s*xdiff[i])
+    y=np.append(y,y[-1]+g[-1]*xdiff[-1])
+    return y
+
 class APS:
     def __init__(self,energydata,APSdata,sqrt=False,Name='no_name'):
         self.energydata=np.array(energydata)
@@ -80,16 +98,16 @@ class APS:
         self.name=Name
         self.sqrt=sqrt
         
-    def pick_range(self):
-        plt.figure()
-        plt.plot(self.energydata,self.APSdata,'o',label='experiment')
-        plt.xlim(self.energydata[0],self.energydata[-1])
-        _=plt.title('Pick the range for fitting (min&max)')
-        [self.xmin,self.xmax]=np.array(plt.ginput(2))[:,0]
-        plt.close()
-        if self.xmax<self.xmin:
-            self.xmax,self.xmin=self.xmin,self.xmax
-        [self.minindex,self.maxindex]=[next(p for p,q in enumerate(self.energydata) if q>self.xmin),next(p for p,q in enumerate(self.energydata) if q>self.xmax)]
+    # def pick_range(self):
+    #     plt.figure()
+    #     plt.plot(self.energydata,self.APSdata,'o',label='experiment')
+    #     plt.xlim(self.energydata[0],self.energydata[-1])
+    #     _=plt.title('Pick the range for fitting (min&max)')
+    #     [self.xmin,self.xmax]=np.array(plt.ginput(2))[:,0]
+    #     plt.close()
+    #     if self.xmax<self.xmin:
+    #         self.xmax,self.xmin=self.xmin,self.xmax
+    #     [self.minindex,self.maxindex]=[next(p for p,q in enumerate(self.energydata) if q>self.xmin),next(p for p,q in enumerate(self.energydata) if q>self.xmax)]
         
     def read_gaussian_MO(self,MOenergy):
         self.MOenergy=MOenergy
@@ -101,12 +119,13 @@ class APS:
             plt.figure()
             self.plot()
             
-    def plot(self,trunc=-8):
+    def plot(self):
         plt.grid(True,which='both',axis='x')
         if hasattr(self,'baseline'):
-            fig=plt.plot(self.energydata,self.APSdata-self.baseline,label=self.name[:trunc])
+            fig=plt.plot(self.energydata,self.APSdata-self.baseline,
+                         label=self.name)
         else:
-            fig=plt.plot(self.energydata,self.APSdata,label=self.name[:trunc])
+            fig=plt.plot(self.energydata,self.APSdata,label=self.name)
         plt.axhline(y=0, color='k',ls='--')
         if hasattr(self,'lin_par'):
             plt.plot([self.homo,self.energydata[self.lin_stop_index]],[0,np.polyval(self.lin_par,self.energydata[self.lin_stop_index])],'--',c=fig[0]._color)
@@ -129,11 +148,12 @@ class APS:
             self.DOSplot()
             plt.legend()
         
-    def DOSplot(self,trunc=-8):
+    def DOSplot(self):
         plt.grid(True,which='both',axis='x')
         if not hasattr(self,'baseline'):    self.find_baseline(plot=False)
-        startindex=len(self.energydata)-next(i for i,j in enumerate(self.APSdata[::-1]-self.baseline) if j<0)-5
-        _=plt.plot(self.energydata[startindex:],self.DOS[startindex:],label=self.name[:trunc])
+        index=-next(i for i,j in enumerate(self.APSdata[::-1]-self.baseline)
+                    if j<0)+len(self.energydata)-5
+        _=plt.plot(self.energydata[index:],self.DOS[index:],label=self.name)
         plt.axhline(y=0, color='k',ls='--')
         plt.autoscale(enable=True,axis='both',tight=True)
         plt.legend()
@@ -165,35 +185,38 @@ class APS:
             plt.title(self.name)
             plt.text(.5, .95, 'HOMO=%1.2f\u00b1 %0.3f%%' %(self.homo,100*self.std_homo), style='italic',bbox={'facecolor': 'yellow', 'alpha': 0.5},horizontalalignment='center',verticalalignment='center',transform=ax.transAxes)
         if self.lin_stop_index-self.lin_start_index==gap: print(self.name+' is using the minimum number of points\t')
-    def DOSfit(self,p0):
-        self.pick_range()
-        fit,_=curve_fit(lambda x,scale,c,center: scale*APS.gaussian(x,c,center),self.energydata[self.minindex:self.maxindex],self.DOS[self.minindex:self.maxindex],p0)
-        plt.figure()
-        plt.plot(self.energydata[self.minindex:self.maxindex],fit[0]*APS.gaussian(self.energydata[self.minindex:self.maxindex],*fit[1:3]),label='fit')
-        self.DOSplot()
+    
+    # def DOSfit(self,p0):
+    #     self.pick_range()
+    #     fit,_=curve_fit(lambda x,scale,c,center: scale*APS.gaussian(x,c,center),self.energydata[self.minindex:self.maxindex],self.DOS[self.minindex:self.maxindex],p0)
+    #     plt.figure()
+    #     plt.plot(self.energydata[self.minindex:self.maxindex],fit[0]*APS.gaussian(self.energydata[self.minindex:self.maxindex],*fit[1:3]),label='fit')
+    #     self.DOSplot()
 
-    def APSfit(self,p0=[0.12,0.2,5],bounds=([0.1,-0.5,0.01],[0.5,0.5,1e4]),repick=True):
-        self.p0=p0
-        self.bounds=bounds
-        if repick:
-            self.pick_range()
-        if not hasattr(self, 'MOenergy'):
-            self.read_gaussian_MO(np.array(input("Input MOs from Gaussian:\n").split(),'float'))
-        self.fit_par,_ = curve_fit(lambda x,c,scale,shift: self.apsfun(x,c,scale,self.MOenergy-shift),self.energydata[self.minindex:self.maxindex],self.APSdata[self.minindex:self.maxindex],p0=[0.12,5,0.2],bounds=([0.1,0.01,-0.5],[0.5,1e4,0.5]),absolute_sigma=True,ftol=1e-12)
-        plt.figure()
-        plt.plot(self.energydata,self.APSdata,'o',label='experiment')
-        self.APSfit=self.apsfun(self.energydata,*self.fit_par[:-1],self.MOenergy-self.fit_par[-1])
-        plt.plot(self.energydata,self.APSfit,label='fit: c=%1.4f, shift=%1.4f, scale=%2.1f' %tuple(self.fit_par))
-        plt.xlabel('Energy (eV)')
-        plt.ylabel('Photoemission^1/3 (a.u.)')
-        plt.legend()
-        plt.title('FitAPS')
-        print('Broaden facter=%1.4f, shift=%1.4f, scale=%2.1f' %tuple(self.fit_par))
+    # def APSfit(self,p0=[0.12,0.2,5],bounds=([0.1,-0.5,0.01],[0.5,0.5,1e4]),repick=True):
+    #     self.p0=p0
+    #     self.bounds=bounds
+    #     if repick:
+    #         self.pick_range()
+    #     if not hasattr(self, 'MOenergy'):
+    #         self.read_gaussian_MO(np.array(input("Input MOs from Gaussian:\n").split(),'float'))
+    #     self.fit_par,_ = curve_fit(lambda x,c,scale,shift: self.apsfun(x,c,scale,self.MOenergy-shift),self.energydata[self.minindex:self.maxindex],self.APSdata[self.minindex:self.maxindex],p0=[0.12,5,0.2],bounds=([0.1,0.01,-0.5],[0.5,1e4,0.5]),absolute_sigma=True,ftol=1e-12)
+    #     plt.figure()
+    #     plt.plot(self.energydata,self.APSdata,'o',label='experiment')
+    #     self.APSfit=self.apsfun(self.energydata,*self.fit_par[:-1],self.MOenergy-self.fit_par[-1])
+    #     plt.plot(self.energydata,self.APSfit,label='fit: c=%1.4f, shift=%1.4f, scale=%2.1f' %tuple(self.fit_par))
+    #     plt.xlabel('Energy (eV)')
+    #     plt.ylabel('Photoemission^1/3 (a.u.)')
+    #     plt.legend()
+    #     plt.title('FitAPS')
+    #     print('Broaden facter=%1.4f, shift=%1.4f, scale=%2.1f' %tuple(self.fit_par))
         
     @classmethod
-    def import_from_files(cls,filenames,sqrt=False):
+    def import_from_files(cls,filenames,sqrt=False,trunc=-4):
         data=[]
-        save_index=[2,6] if sqrt else [2,7] #index of saved column from raw data. 2 is energy and 7 is cuberoot. 6 is square-root.
+        save_index=[2,6] if sqrt else [2,7] 
+        # index of saved column from raw data. 2 is energy and 7 is cuberoot. 
+        #6 is square-root.
         for file in filenames:
             with open(file,newline='') as f:
                 reader=csv.reader(f)
@@ -201,53 +224,93 @@ class APS:
                     if j[:3]==' WF': stopindex=i
                 f.seek(0)
                 acceptlines=range(1,stopindex)
-                temp=np.array([[float(j[save_index[0]]),float(j[save_index[1]])] for i,j in enumerate(reader) if i in acceptlines if float(j[3])<1e4])
-            data.append(cls(temp[:,0],temp[:,1],sqrt,split(file)[1]))
+                temp=np.array([[float(j[save_index[0]]),
+                                float(j[save_index[1]])] 
+                               for i,j in enumerate(reader)
+                               if i in acceptlines if float(j[3])<1e4])
+            data.append(cls(temp[:,0],temp[:,1],sqrt,split(file)[1][:trunc]))
         return data
+    
     @classmethod
     def APS_from_DOS(cls,energydata,DOS,sqrt,Name='no_name'):
-        
-        APS(energydata,APSdata,sqrt,Name)
+        APSdata=inv_gradient(energydata,DOS)
+        APS_obj=cls(energydata,APSdata,sqrt,Name)
+        APS_obj.find_baseline(plot=False)
+        APS_obj.APSdata-=APS_obj.baseline
+        APS_obj.baseline=0
+        return APS_obj
 
     @staticmethod
-    def linear_combine_DOS(data,coeff,plot=False):
+    def lc_DOS(data,coeff,fmt='d',**kwargs):
+        '''
+        linear combine the DOS of each data element with coeff.
+        ----
+        data=[data1,data2,...] where each element is an APS object
+        coeff is a list or tuple of n-element [coeff1,coeff2,...]
+        fmt has option 'd' (data) or 'o' (object).
+        d will output (energy,DOS) and o will output APS_object
+        **kwargs are sqrt and/or Name for APS object.
+        '''
         assert len(data)==len(coeff), 'Dimension mismatch'
-        assert all(data[i].sqrt==data[i+1].sqrt for i in range(len(data)-1)),'data has to be the same sqrt type'
-        lc_energy,lc_DOS=linear_combine(coeff,[[i.energydata,i.DOS] 
-                                               for i in data])
-        
-        APS(lc_energy,lc_DOS,sqrt,Name)
-        if plot:
-            pass
+        assert all(data[i].sqrt==data[i+1].sqrt for i in range(len(data)-1)
+                   ),'data has to be the same sqrt type'
+        assert fmt in ('d','o'), 'fmt can only be \'d\' or \o\''
+        energy,DOS=[i.energydata for i in data],[i.DOS for i in data]
+        energy,DOS=find_overlap(energy,DOS)
+        DOS=np.dot(coeff,DOS)
+        if fmt=='o':
+            default={'sqrt':False,'Name':'linear_combination'}
+            sqrt,Name=[kwargs[i] if kwargs.get(i)!=None else default[i]
+                       for i in ('sqrt','Name')]
+            return APS.APS_from_DOS(energy,DOS,sqrt,Name)
+        else:
+            return energy,DOS
 
     @staticmethod
-    def save_aps_csv(data,location,trunc=-8,filename='APS',):
-        datanames=[i.name[:trunc] for i in data]
+    def lc_DOSfit(source,target):
+        '''
+        Linear combine multiple DOS from source to fit the DOS of target.
+        source is a list of APS objects [APS1,APS2,...] to fit APS obj target.
+        '''
+        energy=[i.energydata for i in [*source,target]]
+        DOS=[i.DOS for i in [*source,target]]
+        energy,DOS=find_overlap(energy,DOS)
+        input_DOS=np.transpose(DOS[:-1])
+        fit_DOS=DOS[-1]
+        fit,cov=curve_fit(lambda x,*c: np.dot(x,c),input_DOS,fit_DOS,
+                          p0=[1/len(input_DOS[0])]*len(input_DOS[0]),
+                          absolute_sigma=True,bounds=(0,np.inf))
+        cov=np.diag(cov)
+        return fit,cov
+
+    @staticmethod
+    def save_aps_csv(data,location,filename='APS'):
+        datanames=[i.name for i in data]
         origin_header=[['Energy','Photoemission\\+(1/3)'],['eV','a.u.']] if all([i.sqrt==False for i in data]) else [['Energy','Photoemission\\+(1/2)'],['eV','a.u.']]
         x,y=[i.energydata for i in data],[i.APSdata-i.baseline for i in data]
         save_csv_for_origin((x,y),location,filename,datanames,origin_header)
 
     @staticmethod
-    def save_aps_fit_csv(data,location,trunc=-8,filename='APS_linear_regression'):
+    def save_aps_fit_csv(data,location,filename='APS_linear_regression'):
         origin_header=[['Energy','Photoemission\\+(1/3)'],['eV','a.u.']] if all([i.sqrt==False for i in data]) else [['Energy','Photoemission\\+(1/2)'],['eV','a.u.']]
-        datanames=[i.name[:trunc] for i in data]
+        datanames=[i.name for i in data]
         x=[np.array([i.homo,i.energydata[i.lin_stop_index]]) for i in data]
         y=[np.array([0,np.polyval(i.lin_par,i.energydata[i.lin_stop_index])]) for i in data]
         save_csv_for_origin((x,y),location,filename,datanames,origin_header)
     
     @staticmethod
-    def save_homo_error_csv(data,location,trunc=-8,filename='APS_HOMO'):
+    def save_homo_error_csv(data,location,filename='APS_HOMO'):
         origin_header=[['Material','Energy','HOMO std'],[None,'eV','eV']]
         datanames=['HOMO']
-        x=[[i.name[:trunc] for i in data]]
+        x=[[i.name for i in data]]
         y=[[-i.homo for i in data]]
         z=[[i.std_homo*i.homo for i in data]]
         save_csv_for_origin((x,y,z),location,filename,datanames,origin_header)
         
     @staticmethod
-    def save_DOS_csv(data,location,trunc=-8,filename='DOS'):
+    def save_DOS_csv(data,location,filename='DOS'):
         origin_header=[['Energy','DOS'],['eV','a.u.']]
-        datanames=[i.name[:trunc] for i in data]
+        datanames=[i.name for i in data]
         x,y=[i.energydata for i in data],[i.DOS for i in data]
         save_csv_for_origin((x,y),location,filename,datanames,origin_header)
         
@@ -277,9 +340,9 @@ class dwf:
             raise Exception('expect key words '+','.join(self.allowed_kwargs)
                             + ' missing')
         
-    def plot(self,trunc=-8):
+    def plot(self):
         plt.grid(True,which='both',axis='both')
-        plt.plot(self.time,self.CPDdata,label=self.name[:trunc])
+        plt.plot(self.time,self.CPDdata,label=self.name)
         plt.ylabel(self.data_type+' ('+self.data_unit+')')
         plt.legend()
         plt.xlabel('Time(s)')
@@ -293,7 +356,7 @@ class dwf:
         self.length=length
             
     @classmethod
-    def import_from_files(cls,filenames,**kwargs):
+    def import_from_files(cls,filenames,trunc=-4,**kwargs):
         data=[]
         save_index=[-3,2]
         for file in filenames:
@@ -305,28 +368,31 @@ class dwf:
                         break
                 f.seek(0)
                 acceptlines=range(1,stopindex)
-                temp=np.array([[float(j[save_index[0]]),float(j[save_index[1]])] for i,j in enumerate(reader) if i in acceptlines])
-            data.append(cls(temp[:,0],temp[:,1],split(file)[1],**kwargs))
+                temp=np.array([[float(j[save_index[0]]),
+                                float(j[save_index[1]])] 
+                               for i,j in enumerate(reader) 
+                               if i in acceptlines])
+            data.append(cls(temp[:,0],temp[:,1],split(file)[1][:-4],**kwargs))
         return data
     
     @staticmethod
-    def save_csv(data,location,trunc=-8,filename='DWF'):
+    def save_csv(data,location,filename='DWF'):
         assert all([data[i].__class__==data[i+1].__class__ for i in range(len(data)-1)]), 'Data are not the same class objects'
         origin_header=[['Time',data[0].data_type],[None,data[0].data_unit]]
-        datanames=[i.name[:trunc] for i in data]
+        datanames=[i.name for i in data]
         x=[i.time for i in data]
         y=[i.CPDdata for i in data]
         save_csv_for_origin((x,y),location,filename,datanames,origin_header)
     
     @staticmethod
-    def save_dwf_stat_csv(data,location,trunc=-8,filename='DWF_stat'):
+    def save_dwf_stat_csv(data,location,filename='DWF_stat'):
         assert all([data[i].__class__==data[i+1].__class__ for i in range(len(data)-1)]), 'Data are not the same class objects'
         if not all([hasattr(i,'average_CPD') for i in data]):
             print('Use last 200sec data for statistic analysis')
             _=[i.dwf_stat() for i in data]
         origin_header=[['Material','Energy',data[0].data_type+' std'],[None,data[0].data_unit,data[0].data_unit]]  
         datanames=[data[0].data_type]
-        x=[[i.name[:trunc] for i in data]]
+        x=[[i.name for i in data]]
         y=[[i.average_CPD for i in data]]
         z=[[i.std_CPD for i in data]]
         save_csv_for_origin((x,y,z),location,filename,datanames,origin_header)
@@ -377,14 +443,14 @@ class spv(dwf):
             plt.figure()
             self.norm_plot()
     
-    def plot(self,trunc=-8):
-        dwf.plot(self,trunc=-8)
+    def plot(self):
+        dwf.plot(self)
         self.plot_highlight()
         
-    def norm_plot(self,trunc=-8):
+    def norm_plot(self):
         assert hasattr(self,'norm_spv'),'Didn\'t noramlized yet'
         plt.grid(True,which='both',axis='both')
-        plt.plot(self.time,self.norm_spv,label=self.name[:trunc])
+        plt.plot(self.time,self.norm_spv,label=self.name)
         plt.ylabel('normalized SPV (a.u.)')
         plt.legend()
         plt.xlabel('Time(s)')
