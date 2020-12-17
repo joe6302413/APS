@@ -289,7 +289,7 @@ class APS:
         DOS=np.dot(coeff,DOS)
         APS_obj=APS.APS_from_DOS(energy,DOS,sqrt,Name)
         APS_obj.lc_source=[i.name for i in data]
-        APS_obj.coeff,APS_obj.cov=coeff,cov
+        APS_obj.lc_coeff,APS_obj.lc_cov=coeff,cov
         return APS_obj
 
     @staticmethod
@@ -298,15 +298,21 @@ class APS:
         Linear combine multiple DOS from source to fit the DOS of target.
         source is a list of APS objects [APS1,APS2,...] to fit APS obj target.
         '''
-        APSdata=[]
-        for i in [*source,target]:
-            if not hasattr(i,'baseline'): i.find_baseline(plot=False)
-            APSdata.append(i.APSdata-i.baseline)
-        index=[[len(i)-k,len(i)-j] for i in APSdata for j,k in 
-               [find_index(-i[::-1],upper_bound=0)]]
-        energy=[j.energy[index[i][0]:index[i][1]] for i,j  in 
+        cutoff=np.inf
+        for n,elem in enumerate(source):
+            if not hasattr(elem,'baseline'): elem.find_baseline(plot=False)
+            APSdata=elem.APSdata-elem.baseline
+            cutoff_=next(elem.energy[-i-1] for i,j in 
+                         enumerate(APSdata[::-1]) if j<0)
+            if cutoff_<cutoff:
+                cutoff=cutoff_
+                index=n
+                lowest_APS=APSdata
+        cutoff_index=len(lowest_APS)-find_index(-lowest_APS[::-1],
+                                                upper_bound=0)[1]
+        energy=[j.energy if i!=index else j.energy[cutoff_index:] for i,j  in 
                 enumerate([*source,target])]
-        DOS=[j.DOS[index[i][0]:index[i][1]] for i,j in 
+        DOS=[j.DOS if i!=index else j.DOS[cutoff_index:] for i,j in 
              enumerate([*source,target])]
         energy,DOS=find_overlap(energy,DOS)
         input_DOS=DOS[:-1]
