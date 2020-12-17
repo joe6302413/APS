@@ -33,7 +33,6 @@ filenames+=tkinter.filedialog.askopenfilenames(parent=root,initialdir='C:/Users/
 location=split(filenames[0])[0]
 
 #%% Load files into data
-filenames=sorted(filenames)
 plt.close('all')
 data=[]
 data+=dwf.import_from_files(filenames)

@@ -37,7 +37,6 @@ root.withdraw()
 filenames+=tkinter.filedialog.askopenfilenames(parent=root,initialdir='C:/Users/yc6017/OneDrive - Imperial College London/Data/APS', title='Please select APS files',filetypes=[('DAT','.DAT')])
 
 #%% load files into data
-filenames=sorted(filenames)
 plt.close('all')
 data=[]
 data+=APS.import_from_files(filenames)
@@ -45,7 +44,7 @@ data+=APS.import_from_files(filenames)
 #%% analyze data
 plt.close('all')
 for i in data:
-    i.analyze(5,20)
+    i.analyze(5)
 #%% overlay all the data
 fig=plt.figure(999)
 for i in data: i.plot()
