@@ -90,30 +90,46 @@ def inv_gradient(x,g,y0=0):
     y=np.append(y,y[-1]+g[-1]*xdiff[-1])
     return y
 
+def find_index(x,lower_bound=-np.inf,upper_bound=np.inf):
+    '''
+    find index of two bounds from a positive monotonic array
+    '''
+    if lower_bound>upper_bound:
+        raise Exception('lower_bound is larger than upper_bound')
+    try:
+        startindex=next(i for i,j in enumerate(x) if j>lower_bound)
+    except StopIteration:
+        startindex=len(x)
+    try:
+        stopindex=next(i for i,j in enumerate(x) if j>upper_bound)
+    except StopIteration:
+        stopindex=len(x)
+    return startindex,stopindex
 class APS:
-    def __init__(self,energydata,APSdata,sqrt=False,Name='no_name'):
-        self.energydata=np.array(energydata)
+    def __init__(self,energy,APSdata,sqrt=False,Name='no_name'):
+        self.energy=np.array(energy)
         self.APSdata=np.array(APSdata)
-        self.DOS=np.gradient(APSdata,energydata)
+        self.DOS=np.gradient(APSdata,energy)
         self.name=Name
         self.sqrt=sqrt
         
     # def pick_range(self):
     #     plt.figure()
-    #     plt.plot(self.energydata,self.APSdata,'o',label='experiment')
-    #     plt.xlim(self.energydata[0],self.energydata[-1])
+    #     plt.plot(self.energy,self.APSdata,'o',label='experiment')
+    #     plt.xlim(self.energy[0],self.energy[-1])
     #     _=plt.title('Pick the range for fitting (min&max)')
     #     [self.xmin,self.xmax]=np.array(plt.ginput(2))[:,0]
     #     plt.close()
     #     if self.xmax<self.xmin:
     #         self.xmax,self.xmin=self.xmin,self.xmax
-    #     [self.minindex,self.maxindex]=[next(p for p,q in enumerate(self.energydata) if q>self.xmin),next(p for p,q in enumerate(self.energydata) if q>self.xmax)]
+    #     [self.minindex,self.maxindex]=[next(p for p,q in enumerate(self.energy) if q>self.xmin),next(p for p,q in enumerate(self.energy) if q>self.xmax)]
         
     def read_gaussian_MO(self,MOenergy):
         self.MOenergy=MOenergy
         
     def find_baseline(self,baseline_bounds=(0,5),plot=True):
-        baseline_res=shgo(lambda x: -APS.mofun(x,0.3,self.APSdata),[baseline_bounds])
+        baseline_res=shgo(lambda x: -APS.mofun(x,0.3,self.APSdata),
+                          [baseline_bounds])
         self.baseline=baseline_res.x
         if plot==True:
             plt.figure()
@@ -122,15 +138,17 @@ class APS:
     def plot(self):
         plt.grid(True,which='both',axis='x')
         if hasattr(self,'baseline'):
-            fig=plt.plot(self.energydata,self.APSdata-self.baseline,
+            fig=plt.plot(self.energy,self.APSdata-self.baseline,
                          label=self.name)
         else:
-            fig=plt.plot(self.energydata,self.APSdata,label=self.name)
+            fig=plt.plot(self.energy,self.APSdata,label=self.name)
         plt.axhline(y=0, color='k',ls='--')
         if hasattr(self,'lin_par'):
-            plt.plot([self.homo,self.energydata[self.lin_stop_index]],[0,np.polyval(self.lin_par,self.energydata[self.lin_stop_index])],'--',c=fig[0]._color)
+            plt.plot([self.homo,self.energy[self.lin_stop_index]],
+                     [0,np.polyval(self.lin_par,self.energy[
+                         self.lin_stop_index])],'--',c=fig[0]._color)
         if hasattr(self,'fit_par') and hasattr(self,'APSfit'):
-            plt.plot(self.energydata,self.APSfit,label='fit: c=%1.4f, shift=%1.4f, scale=%2.1f' %tuple(self.fit_par))
+            plt.plot(self.energy,self.APSfit,label='fit: c=%1.4f, shift=%1.4f, scale=%2.1f' %tuple(self.fit_par))
         plt.legend()
         plt.xlabel('Energy (eV)')
         if self.sqrt==False:
@@ -144,35 +162,41 @@ class APS:
         self.DOS=savgol_filter(self.DOS,*args)
         if plot:
             plt.figure()
-            plt.plot(self.energydata,self.DOS_origin,label='no smooth')
+            plt.plot(self.energy,self.DOS_origin,label='no smooth')
             self.DOSplot()
             plt.legend()
         
     def DOSplot(self):
         plt.grid(True,which='both',axis='x')
         if not hasattr(self,'baseline'):    self.find_baseline(plot=False)
-        index=-next(i for i,j in enumerate(self.APSdata[::-1]-self.baseline)
-                    if j<0)+len(self.energydata)-5
-        _=plt.plot(self.energydata[index:],self.DOS[index:],label=self.name)
+        _,index=find_index(-self.APSdata[::-1]+self.baseline,upper_bound=0)
+        index=len(self.APSdata)-index-5
+        _=plt.plot(self.energy[index:],self.DOS[index:],label=self.name)
         plt.axhline(y=0, color='k',ls='--')
         plt.autoscale(enable=True,axis='both',tight=True)
         plt.legend()
         plt.xlabel('Energy (eV)')
         plt.ylabel('DOS (a.u.)')
 
-    def analyze(self, fit_lower_bound=0.5,fit_upper_bound=np.inf,smoothness=2,plot=True):
+    def analyze(self, fit_lower_bound=0.5,fit_upper_bound=np.inf,smoothness=2,
+                plot=True):
         if smoothness==1:   gap=5
         elif smoothness==2: gap=7
         else: gap=10
         if not hasattr(self, 'baseline'):  self.find_baseline(plot=False)
-        startindex=len(self.energydata)-next(i for i,j in enumerate(self.APSdata[::-1]-self.baseline) if j<fit_lower_bound)-1
-        stopindex=len(self.energydata)-next(i for i,j in enumerate(self.APSdata[::-1]-self.baseline) if j<fit_upper_bound)
+        stop,start=find_index(-self.APSdata[::-1]+self.baseline,-fit_upper_bound,
+                              -fit_lower_bound)
+        start=len(self.APSdata)-start-1
+        stop=len(self.APSdata)-stop
         self.std_homo=np.inf
-        for i,j in [[i,j] for i in range(startindex,stopindex) for j in range(i+gap,stopindex)]:
-            [slope,intercept],[[var_slope,_],[_,var_intercept]]=np.polyfit(self.energydata[i:j],self.APSdata[i:j]-self.baseline,1,cov=True)
+        for i,j in [[i,j] for i in range(start,stop) 
+                    for j in range(i+gap,stop)]:
+            [slope,intercept],[[var_slope,_],[_,var_intercept]]=np.polyfit(
+                self.energy[i:j],self.APSdata[i:j]-self.baseline,1,cov=True)
             std_homo=np.sqrt(var_slope/slope**2+var_intercept/intercept**2)
             if std_homo<self.std_homo:
-                self.lin_start_index,self.lin_stop_index,self.lin_par,self.std_homo=i,j,(slope,intercept),std_homo
+                self.lin_start_index,self.lin_stop_index=i,j
+                self.lin_par,self.std_homo=(slope,intercept),std_homo
         if self.std_homo==np.inf:
             plt.figure()
             self.plot()
@@ -183,14 +207,20 @@ class APS:
             ax=fig.gca()
             self.plot()
             plt.title(self.name)
-            plt.text(.5, .95, 'HOMO=%1.2f\u00b1 %0.3f%%' %(self.homo,100*self.std_homo), style='italic',bbox={'facecolor': 'yellow', 'alpha': 0.5},horizontalalignment='center',verticalalignment='center',transform=ax.transAxes)
-        if self.lin_stop_index-self.lin_start_index==gap: print(self.name+' is using the minimum number of points\t')
+            plt.text(.5, .95, 'HOMO=%1.2f\u00b1 %0.3f%%' 
+                     %(self.homo,100*self.std_homo), style='italic',
+                     bbox={'facecolor': 'yellow', 'alpha': 0.5},
+                     horizontalalignment='center',verticalalignment='center',
+                     transform=ax.transAxes)
+            ax.legend().remove()
+        if self.lin_stop_index-self.lin_start_index==gap:
+            print(self.name+' is using the minimum number of points\t')
     
     # def DOSfit(self,p0):
     #     self.pick_range()
-    #     fit,_=curve_fit(lambda x,scale,c,center: scale*APS.gaussian(x,c,center),self.energydata[self.minindex:self.maxindex],self.DOS[self.minindex:self.maxindex],p0)
+    #     fit,_=curve_fit(lambda x,scale,c,center: scale*APS.gaussian(x,c,center),self.energy[self.minindex:self.maxindex],self.DOS[self.minindex:self.maxindex],p0)
     #     plt.figure()
-    #     plt.plot(self.energydata[self.minindex:self.maxindex],fit[0]*APS.gaussian(self.energydata[self.minindex:self.maxindex],*fit[1:3]),label='fit')
+    #     plt.plot(self.energy[self.minindex:self.maxindex],fit[0]*APS.gaussian(self.energy[self.minindex:self.maxindex],*fit[1:3]),label='fit')
     #     self.DOSplot()
 
     # def APSfit(self,p0=[0.12,0.2,5],bounds=([0.1,-0.5,0.01],[0.5,0.5,1e4]),repick=True):
@@ -200,11 +230,11 @@ class APS:
     #         self.pick_range()
     #     if not hasattr(self, 'MOenergy'):
     #         self.read_gaussian_MO(np.array(input("Input MOs from Gaussian:\n").split(),'float'))
-    #     self.fit_par,_ = curve_fit(lambda x,c,scale,shift: self.apsfun(x,c,scale,self.MOenergy-shift),self.energydata[self.minindex:self.maxindex],self.APSdata[self.minindex:self.maxindex],p0=[0.12,5,0.2],bounds=([0.1,0.01,-0.5],[0.5,1e4,0.5]),absolute_sigma=True,ftol=1e-12)
+    #     self.fit_par,_ = curve_fit(lambda x,c,scale,shift: self.apsfun(x,c,scale,self.MOenergy-shift),self.energy[self.minindex:self.maxindex],self.APSdata[self.minindex:self.maxindex],p0=[0.12,5,0.2],bounds=([0.1,0.01,-0.5],[0.5,1e4,0.5]),absolute_sigma=True,ftol=1e-12)
     #     plt.figure()
-    #     plt.plot(self.energydata,self.APSdata,'o',label='experiment')
-    #     self.APSfit=self.apsfun(self.energydata,*self.fit_par[:-1],self.MOenergy-self.fit_par[-1])
-    #     plt.plot(self.energydata,self.APSfit,label='fit: c=%1.4f, shift=%1.4f, scale=%2.1f' %tuple(self.fit_par))
+    #     plt.plot(self.energy,self.APSdata,'o',label='experiment')
+    #     self.APSfit=self.apsfun(self.energy,*self.fit_par[:-1],self.MOenergy-self.fit_par[-1])
+    #     plt.plot(self.energy,self.APSfit,label='fit: c=%1.4f, shift=%1.4f, scale=%2.1f' %tuple(self.fit_par))
     #     plt.xlabel('Energy (eV)')
     #     plt.ylabel('Photoemission^1/3 (a.u.)')
     #     plt.legend()
@@ -232,16 +262,16 @@ class APS:
         return data
     
     @classmethod
-    def APS_from_DOS(cls,energydata,DOS,sqrt,Name='no_name'):
-        APSdata=inv_gradient(energydata,DOS)
-        APS_obj=cls(energydata,APSdata,sqrt,Name)
+    def APS_from_DOS(cls,energy,DOS,sqrt,Name='no_name'):
+        APSdata=inv_gradient(energy,DOS)
+        APS_obj=cls(energy,APSdata,sqrt,Name)
         APS_obj.find_baseline(plot=False)
         APS_obj.APSdata-=APS_obj.baseline
         APS_obj.baseline=0
         return APS_obj
 
     @staticmethod
-    def lc_DOS(data,coeff,fmt='d',**kwargs):
+    def lc_DOS(data,coeff,cov,sqrt=False,Name='linear_combination'):
         '''
         linear combine the DOS of each data element with coeff.
         ----
@@ -254,48 +284,59 @@ class APS:
         assert len(data)==len(coeff), 'Dimension mismatch'
         assert all(data[i].sqrt==data[i+1].sqrt for i in range(len(data)-1)
                    ),'data has to be the same sqrt type'
-        assert fmt in ('d','o'), 'fmt can only be \'d\' or \o\''
-        energy,DOS=[i.energydata for i in data],[i.DOS for i in data]
+        energy,DOS=[i.energy for i in data],[i.DOS for i in data]
         energy,DOS=find_overlap(energy,DOS)
         DOS=np.dot(coeff,DOS)
-        if fmt=='o':
-            default={'sqrt':False,'Name':'linear_combination'}
-            sqrt,Name=[kwargs[i] if kwargs.get(i)!=None else default[i]
-                       for i in ('sqrt','Name')]
-            return APS.APS_from_DOS(energy,DOS,sqrt,Name)
-        else:
-            return energy,DOS
+        APS_obj=APS.APS_from_DOS(energy,DOS,sqrt,Name)
+        APS_obj.lc_source=[i.name for i in data]
+        APS_obj.coeff,APS_obj.cov=coeff,cov
+        return APS_obj
 
     @staticmethod
-    def lc_DOSfit(source,target):
+    def lc_DOSfit(source,target,constrain=True):
         '''
         Linear combine multiple DOS from source to fit the DOS of target.
         source is a list of APS objects [APS1,APS2,...] to fit APS obj target.
         '''
-        energy=[i.energydata for i in [*source,target]]
-        DOS=[i.DOS for i in [*source,target]]
+        APSdata=[]
+        for i in [*source,target]:
+            if not hasattr(i,'baseline'): i.find_baseline(plot=False)
+            APSdata.append(i.APSdata-i.baseline)
+        index=[[len(i)-k,len(i)-j] for i in APSdata for j,k in 
+               [find_index(-i[::-1],upper_bound=0)]]
+        energy=[j.energy[index[i][0]:index[i][1]] for i,j  in 
+                enumerate([*source,target])]
+        DOS=[j.DOS[index[i][0]:index[i][1]] for i,j in 
+             enumerate([*source,target])]
         energy,DOS=find_overlap(energy,DOS)
-        input_DOS=np.transpose(DOS[:-1])
+        input_DOS=DOS[:-1]
         fit_DOS=DOS[-1]
-        fit,cov=curve_fit(lambda x,*c: np.dot(x,c),input_DOS,fit_DOS,
-                          p0=[1/len(input_DOS[0])]*len(input_DOS[0]),
+        if constrain==1:
+            fit,cov=curve_fit(lambda x,*c: np.dot((*c,1-sum(c)),x),input_DOS,
+                              fit_DOS,p0=[1/len(input_DOS)]*(len(input_DOS)-1),
                           absolute_sigma=True,bounds=(0,np.inf))
-        cov=np.diag(cov)
-        return fit,cov
-
+            cov=np.diag(cov)
+            return np.array([*fit,1-sum(fit)]),cov
+        else:
+            fit,cov=curve_fit(lambda x,*c: np.dot(c,x),input_DOS,
+                              fit_DOS,p0=[1/len(input_DOS)]*len(input_DOS),
+                          absolute_sigma=True,bounds=(0,np.inf))
+            cov=np.diag(cov)
+            return fit,cov
+    
     @staticmethod
     def save_aps_csv(data,location,filename='APS'):
         datanames=[i.name for i in data]
         origin_header=[['Energy','Photoemission\\+(1/3)'],['eV','a.u.']] if all([i.sqrt==False for i in data]) else [['Energy','Photoemission\\+(1/2)'],['eV','a.u.']]
-        x,y=[i.energydata for i in data],[i.APSdata-i.baseline for i in data]
+        x,y=[i.energy for i in data],[i.APSdata-i.baseline for i in data]
         save_csv_for_origin((x,y),location,filename,datanames,origin_header)
 
     @staticmethod
     def save_aps_fit_csv(data,location,filename='APS_linear_regression'):
         origin_header=[['Energy','Photoemission\\+(1/3)'],['eV','a.u.']] if all([i.sqrt==False for i in data]) else [['Energy','Photoemission\\+(1/2)'],['eV','a.u.']]
         datanames=[i.name for i in data]
-        x=[np.array([i.homo,i.energydata[i.lin_stop_index]]) for i in data]
-        y=[np.array([0,np.polyval(i.lin_par,i.energydata[i.lin_stop_index])]) for i in data]
+        x=[np.array([i.homo,i.energy[i.lin_stop_index]]) for i in data]
+        y=[np.array([0,np.polyval(i.lin_par,i.energy[i.lin_stop_index])]) for i in data]
         save_csv_for_origin((x,y),location,filename,datanames,origin_header)
     
     @staticmethod
@@ -311,7 +352,7 @@ class APS:
     def save_DOS_csv(data,location,filename='DOS'):
         origin_header=[['Energy','DOS'],['eV','a.u.']]
         datanames=[i.name for i in data]
-        x,y=[i.energydata for i in data],[i.DOS for i in data]
+        x,y=[i.energy for i in data],[i.DOS for i in data]
         save_csv_for_origin((x,y),location,filename,datanames,origin_header)
         
     @staticmethod
@@ -349,10 +390,10 @@ class dwf:
         plt.autoscale(enable=True,axis='both',tight=True)
             
     def dwf_stat(self,length=200):
-        stop_index=len(self.time)
-        start_index=stop_index-next(i for i,j in enumerate(self.time[::-1]-self.time[-1]) if j<-length)
-        self.average_CPD=np.average(self.CPDdata[start_index:stop_index])
-        self.std_CPD=np.std(self.CPDdata[start_index:stop_index])
+        start,stop=find_index(self.time,self.time[-1]-200)
+        start-=1
+        self.average_CPD=np.average(self.CPDdata[start:stop])
+        self.std_CPD=np.std(self.CPDdata[start:stop])
         self.length=length
             
     @classmethod
