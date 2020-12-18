@@ -90,21 +90,6 @@ def inv_gradient(x,g,y0=0):
     y=np.append(y,y[-1]+g[-1]*xdiff[-1])
     return y
 
-def find_index(x,lower_bound=-np.inf,upper_bound=np.inf):
-    '''
-    find index of two bounds from a positive monotonic array
-    '''
-    if lower_bound>upper_bound:
-        raise Exception('lower_bound is larger than upper_bound')
-    try:
-        startindex=next(i for i,j in enumerate(x) if j>lower_bound)
-    except StopIteration:
-        startindex=len(x)
-    try:
-        stopindex=next(i for i,j in enumerate(x) if j>upper_bound)
-    except StopIteration:
-        stopindex=len(x)
-    return startindex,stopindex
 class APS:
     def __init__(self,energy,APSdata,sqrt=False,Name='no_name'):
         self.energy=np.array(energy)
@@ -134,7 +119,15 @@ class APS:
         if plot==True:
             plt.figure()
             self.plot()
-            
+
+    def find_cutoff(self):
+        if not hasattr(self,'baseline'):
+            self.find_baseline(plot=False)
+            print('Automatic find baseline between (0,5) for '+self.name)
+        index=next(len(self.APSdata)-i for i,j in enumerate(self.APSdata[::-1]
+                                                 -self.baseline) if j<0)
+        self.cutoff_index,self.cutoff_energy=index,self.energy[index]
+        
     def plot(self):
         plt.grid(True,which='both',axis='x')
         if hasattr(self,'baseline'):
@@ -168,9 +161,9 @@ class APS:
         
     def DOSplot(self):
         plt.grid(True,which='both',axis='x')
-        if not hasattr(self,'baseline'):    self.find_baseline(plot=False)
-        _,index=find_index(-self.APSdata[::-1]+self.baseline,upper_bound=0)
-        index=len(self.APSdata)-index-5
+        if not hasattr(self,'cutoff_energy'):
+            self.find_cutoff()
+        index=self.cutoff_index-5
         _=plt.plot(self.energy[index:],self.DOS[index:],label=self.name)
         plt.axhline(y=0, color='k',ls='--')
         plt.autoscale(enable=True,axis='both',tight=True)
@@ -183,11 +176,13 @@ class APS:
         if smoothness==1:   gap=5
         elif smoothness==2: gap=7
         else: gap=10
-        if not hasattr(self, 'baseline'):  self.find_baseline(plot=False)
-        stop,start=find_index(-self.APSdata[::-1]+self.baseline,-fit_upper_bound,
-                              -fit_lower_bound)
-        start=len(self.APSdata)-start-1
-        stop=len(self.APSdata)-stop
+        if not hasattr(self, 'baseline'):
+            self.find_baseline(plot=False)
+            print('Automatic find baseline between (0,5) for '+self.name)
+        start=len(self.energy)-next(i for i,j in enumerate(
+            self.APSdata[::-1]-self.baseline) if j<fit_lower_bound)-1
+        stop=len(self.energy)-next(i for i,j in enumerate(
+            self.APSdata[::-1]-self.baseline) if j<fit_upper_bound)
         self.std_homo=np.inf
         for i,j in [[i,j] for i in range(start,stop) 
                     for j in range(i+gap,stop)]:
@@ -216,12 +211,12 @@ class APS:
         if self.lin_stop_index-self.lin_start_index==gap:
             print(self.name+' is using the minimum number of points\t')
     
-    # def DOSfit(self,p0):
-    #     self.pick_range()
-    #     fit,_=curve_fit(lambda x,scale,c,center: scale*APS.gaussian(x,c,center),self.energy[self.minindex:self.maxindex],self.DOS[self.minindex:self.maxindex],p0)
-    #     plt.figure()
-    #     plt.plot(self.energy[self.minindex:self.maxindex],fit[0]*APS.gaussian(self.energy[self.minindex:self.maxindex],*fit[1:3]),label='fit')
-    #     self.DOSplot()
+    def DOSfit(self,p0):
+        self.pick_range()
+        fit,_=curve_fit(lambda x,scale,c,center: scale*APS.gaussian(x,c,center),self.energy[self.minindex:self.maxindex],self.DOS[self.minindex:self.maxindex],p0)
+        plt.figure()
+        plt.plot(self.energy[self.minindex:self.maxindex],fit[0]*APS.gaussian(self.energy[self.minindex:self.maxindex],*fit[1:3]),label='fit')
+        self.DOSplot()
 
     # def APSfit(self,p0=[0.12,0.2,5],bounds=([0.1,-0.5,0.01],[0.5,0.5,1e4]),repick=True):
     #     self.p0=p0
@@ -298,21 +293,13 @@ class APS:
         Linear combine multiple DOS from source to fit the DOS of target.
         source is a list of APS objects [APS1,APS2,...] to fit APS obj target.
         '''
-        cutoff=np.inf
-        for n,elem in enumerate(source):
-            if not hasattr(elem,'baseline'): elem.find_baseline(plot=False)
-            APSdata=elem.APSdata-elem.baseline
-            cutoff_=next(elem.energy[-i-1] for i,j in 
-                         enumerate(APSdata[::-1]) if j<0)
-            if cutoff_<cutoff:
-                cutoff=cutoff_
-                index=n
-                lowest_APS=APSdata
-        cutoff_index=len(lowest_APS)-find_index(-lowest_APS[::-1],
-                                                upper_bound=0)[1]
-        energy=[j.energy if i!=index else j.energy[cutoff_index:] for i,j  in 
-                enumerate([*source,target])]
-        DOS=[j.DOS if i!=index else j.DOS[cutoff_index:] for i,j in 
+        if any([not hasattr(i,'cutoff_index') for i in [*source,target]]):
+            _=[i.find_cutoff() for i in [*source,target]]
+        cutoff_energy=[i.cutoff_energy for i in source]
+        index=cutoff_energy.index(min(cutoff_energy))
+        energy=[j.energy if i!=index else j.energy[j.cutoff_index:] for i,j
+                in enumerate([*source,target])]
+        DOS=[j.DOS if i!=index else j.DOS[j.cutoff_index:] for i,j in 
              enumerate([*source,target])]
         energy,DOS=find_overlap(energy,DOS)
         input_DOS=DOS[:-1]
@@ -396,10 +383,10 @@ class dwf:
         plt.autoscale(enable=True,axis='both',tight=True)
             
     def dwf_stat(self,length=200):
-        start,stop=find_index(self.time,self.time[-1]-200)
-        start-=1
-        self.average_CPD=np.average(self.CPDdata[start:stop])
-        self.std_CPD=np.std(self.CPDdata[start:stop])
+        start=next(i-1 for i,j in enumerate(self.time) if 
+                   j>self.time[-1]-length)
+        self.average_CPD=np.average(self.CPDdata[start:])
+        self.std_CPD=np.std(self.CPDdata[start:])
         self.length=length
             
     @classmethod
@@ -448,6 +435,7 @@ class calibrate:
     def __init__(self,ref_APS,ref_dwf,fit_lower_bound=10,fit_upper_bound=50):
         ref_APS.analyze(fit_lower_bound=fit_lower_bound,fit_upper_bound=fit_upper_bound,smoothness=3)
         if not hasattr(ref_dwf,'average_CPD'):
+            print('Use last 200sec data for average ref CPD')
             ref_dwf.dwf_stat()
         self.tip_dwf=-ref_APS.homo+ref_dwf.average_CPD/1000
     
