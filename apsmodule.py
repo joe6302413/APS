@@ -98,6 +98,12 @@ class APS:
         self.name=Name
         self.sqrt=sqrt
         
+    def __repr__(self):
+        return self.name
+    
+    def __str__(self):
+        return self.name
+    
     # def pick_range(self):
     #     plt.figure()
     #     plt.plot(self.energy,self.APSdata,'o',label='experiment')
@@ -112,9 +118,9 @@ class APS:
     def read_gaussian_MO(self,MOenergy):
         self.MOenergy=MOenergy
         
-    def find_baseline(self,baseline_bounds=(0,5),plot=True):
+    def find_baseline(self,baseline_bounds=(1,5),plot=True):
         baseline_res=shgo(lambda x: -APS.mofun(x,0.3,self.APSdata),
-                          [baseline_bounds])
+                          [baseline_bounds],iters=2)
         self.baseline=baseline_res.x
         if plot==True:
             plt.figure()
@@ -123,7 +129,7 @@ class APS:
     def find_cutoff(self):
         if not hasattr(self,'baseline'):
             self.find_baseline(plot=False)
-            print('Automatic find baseline between (0,5) for '+self.name)
+            print('Automatic find baseline between (1,5) for '+self.name)
         index=next(len(self.APSdata)-i for i,j in enumerate(self.APSdata[::-1]
                                                  -self.baseline) if j<0)
         self.cutoff_index,self.cutoff_energy=index,self.energy[index]
@@ -164,7 +170,8 @@ class APS:
         if not hasattr(self,'cutoff_energy'):
             self.find_cutoff()
         index=self.cutoff_index-5
-        _=plt.plot(self.energy[index:],self.DOS[index:],label=self.name)
+        _=plt.plot(self.energy[index:],self.DOS[index:],'*-',label=self.name,
+                   mfc='none')
         plt.axhline(y=0, color='k',ls='--')
         plt.autoscale(enable=True,axis='both',tight=True)
         plt.legend()
@@ -178,7 +185,7 @@ class APS:
         else: gap=10
         if not hasattr(self, 'baseline'):
             self.find_baseline(plot=False)
-            print('Automatic find baseline between (0,5) for '+self.name)
+            print('Automatic find baseline between (1,5) for '+self.name)
         start=len(self.energy)-next(i for i,j in enumerate(
             self.APSdata[::-1]-self.baseline) if j<fit_lower_bound)-1
         stop=len(self.energy)-next(i for i,j in enumerate(
@@ -374,6 +381,12 @@ class dwf:
             raise Exception('expect key words '+','.join(self.allowed_kwargs)
                             + ' missing')
         
+    def __repr__(self):
+        return self.name
+    
+    def __str__(self):
+        return self.name
+    
     def plot(self):
         plt.grid(True,which='both',axis='both')
         plt.plot(self.time,self.CPDdata,label=self.name)
@@ -438,6 +451,12 @@ class calibrate:
             print('Use last 200sec data for average ref CPD')
             ref_dwf.dwf_stat()
         self.tip_dwf=-ref_APS.homo+ref_dwf.average_CPD/1000
+    
+    def __repr__(self):
+        return self.name
+    
+    def __str__(self):
+        return self.name
     
     def cal(self,data):
         assert all([i.__class__.__name__=='dwf' for i in data]),'Calibrate only applicable to CPD measurements'
