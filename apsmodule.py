@@ -328,7 +328,9 @@ class APS:
     def save_aps_csv(data,location,filename='APS'):
         datanames=[i.name for i in data]
         origin_header=[['Energy','Photoemission\\+(1/3)'],['eV','a.u.']] if all([i.sqrt==False for i in data]) else [['Energy','Photoemission\\+(1/2)'],['eV','a.u.']]
-        x,y=[i.energy for i in data],[i.APSdata-i.baseline for i in data]
+        x,y=[i.energy for i in data],[i.APSdata-i.baseline if 
+                                      hasattr(i,'baseline') else i.APSdata 
+                                      for i in data]
         save_csv_for_origin((x,y),location,filename,datanames,origin_header)
 
     @staticmethod
@@ -445,12 +447,12 @@ class dwf:
         save_csv_for_origin((x,y,z),location,filename,datanames,origin_header)
         
 class calibrate:
-    def __init__(self,ref_APS,ref_dwf,fit_lower_bound=10,fit_upper_bound=50):
-        ref_APS.analyze(fit_lower_bound=fit_lower_bound,fit_upper_bound=fit_upper_bound,smoothness=3)
-        if not hasattr(ref_dwf,'average_CPD'):
-            print('Use last 200sec data for average ref CPD')
-            ref_dwf.dwf_stat()
+    def __init__(self,ref_APS,ref_dwf):
+        assert hasattr(ref_APS,'homo'),'Analyze ref. APS by ref_APS.analyze()'
+        assert hasattr(ref_dwf,'average_CPD'), \
+            'Find average CPD by ref_dwf.dwf_stat()'
         self.tip_dwf=-ref_APS.homo+ref_dwf.average_CPD/1000
+        self.name=(ref_APS.name,ref_dwf.name)
     
     def __repr__(self):
         return self.name
@@ -459,7 +461,8 @@ class calibrate:
         return self.name
     
     def cal(self,data):
-        assert all([i.__class__.__name__=='dwf' for i in data]),'Calibrate only applicable to CPD measurements'
+        assert all([i.__class__.__name__=='dwf' for i in data]),\
+            'Calibrate only applicable to CPD measurements'
         for i in data:
             i.CPDdata=-i.CPDdata/1000+self.tip_dwf
             i.cal=True

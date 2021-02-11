@@ -44,7 +44,7 @@ data+=APS.import_from_files(filenames)
 #%% analyze data
 plt.close('all')
 for i in data:
-    i.analyze(0,12)
+    i.analyze(3,30)
 #%% overlay all the data
 fig=plt.figure(999)
 for i in data: i.plot()
