@@ -157,11 +157,14 @@ class APS:
         plt.autoscale(enable=True,axis='both',tight=True)
             
     def DOSsmooth(self,*args,plot=False):
-        self.DOS_origin=self.DOS
+        if hasattr(self,'DOS_original'):
+            self.DOS=self.DOS_original
+        else:
+            self.DOS_original=self.DOS
         self.DOS=savgol_filter(self.DOS,*args)
         if plot:
             plt.figure()
-            plt.plot(self.energy,self.DOS_origin,label='no smooth')
+            plt.plot(self.energy,self.DOS_original,label='no smooth')
             self.DOSplot()
             plt.legend()
         
