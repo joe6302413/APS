@@ -51,14 +51,19 @@ ref_dwf_file=[tkinter.filedialog.askopenfilename(parent=root,initialdir=location
 [ref_APS]=APS.import_from_files(ref_APS_file,sqrt=True)
 [ref_dwf]=dwf.import_from_files(ref_dwf_file)
 
+#%% Analyze ref_APS and dwf_stat ref_dwf
+ref_APS.analyze(fit_lower_bound=10,fit_upper_bound=50,smoothness=3,
+                plot=True)
+ref_dwf.dwf_stat(length=200)
+
 #%% Load calibration object
-cal=calibrate(ref_APS,ref_dwf,10,50)
+cal=calibrate(ref_APS,ref_dwf)
 
 #%% Calibrate dwf data
 cal.cal(data)
 
 #%% Calculate statistic data
-for i in data:  i.dwf_stat()
+for i in data:  i.dwf_stat(length=200)
 
 #%% Save calibrated DWF into file
 dwf.save_csv(data,location,filename='DWF')
