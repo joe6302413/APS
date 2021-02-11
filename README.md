@@ -1,5 +1,5 @@
 # APS
-python module and scripts for APS
+python module and scripts for APS04 from KP technology
 
 package requirements
 1. numpy
