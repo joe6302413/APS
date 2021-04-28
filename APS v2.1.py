@@ -44,20 +44,29 @@ data+=APS.import_from_files(filenames)
 #%% analyze data
 plt.close('all')
 for i in data:
-    i.analyze(3,30)
+    i.analyze(6,20)
+    
 #%% overlay all the data
 fig=plt.figure(999)
 for i in data: i.plot()
-
+    
 #%% Saving APS and APS fit and HOMO with error
 location=split(filenames[0])[0]
 APS.save_aps_csv(data,location)
 APS.save_aps_fit_csv(data,location)
 APS.save_homo_error_csv(data,location)
 
+#%% analyze DOS
+for i in data:
+    i.DOS_analyze(bg=100,plot=False)
+
 #%% smoothing DOS
-location=split(filenames[0])[0]
-_=[i.DOSsmooth(11,3) for i in data]
+_=[i.DOSsmooth(17,4,plot=True) for i in data]
+
+#%% overlay all the DOS
+plt.figure(1000)
+for i in data: i.DOSplot()
 
 #%% Saving DOS into csv
+location=split(filenames[0])[0]
 APS.save_DOS_csv(data,location)

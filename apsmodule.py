@@ -96,14 +96,21 @@ class APS:
         self.APSdata=np.array(APSdata)
         self.DOS=np.gradient(APSdata,energy)
         self.name=Name
-        self.sqrt=sqrt
+        self.status={'sqrt': sqrt,'baseline':False,
+                     'cutoff': False,'analyzed':False, 'DOS_analyzed': True,
+                     'DOS smoothed': False}
         
     def __repr__(self):
         return self.name
     
     def __str__(self):
-        return self.name
-    
+        summary='Name:\t'+self.name+'\n'
+        summary+='\n'.join([i+':\t'+str(j) for i,j in self.status.items()])+'\n'
+        if self.status['analyzed']==True:
+            summary+='HOMO(eV):\t%1.2f\u00b1%1.2feV\n'%(
+                self.homo,self.homo*self.std_homo)
+        return summary
+               
     # def pick_range(self):
     #     plt.figure()
     #     plt.plot(self.energy,self.APSdata,'o',label='experiment')
@@ -114,6 +121,31 @@ class APS:
     #     if self.xmax<self.xmin:
     #         self.xmax,self.xmin=self.xmin,self.xmax
     #     [self.minindex,self.maxindex]=[next(p for p,q in enumerate(self.energy) if q>self.xmin),next(p for p,q in enumerate(self.energy) if q>self.xmax)]
+    
+    def status_check(self):
+        report=''
+        if hasattr(self,'baseline'):
+            if not self.status['baseline']==float(self.baseline):
+                report+='Baseline is corrupted!\nRedo self.find_baseline'\
+                    '(baseline_bounds) and self.find_cutoff()\n'
+        elif self.status['baseline']:
+            report+='Baseline is corrupted!\nRedo self.find_baseline'\
+                    '(baseline_bounds) and self.find_cutoff()\n'
+        if self.status['cutoff']!=hasattr(self,'cutoff_index'):
+            report+='Cutoff is corrupted!\nRedo self.find_cutoff()\n'
+        if self.status['analyzed']!=hasattr(self,'homo'):
+            report+='Analaysis is corrupted!\nRedo self.analyze('\
+                'fit_lower_bound,fit_upper_bound)\n'
+        # if self.status['DOS_analyzed']!=hasattr(self,'DOS'):
+        #     report+='DOS is corrupted!\nRedo self.DOS_analyze(bg)\n'
+        if self.status['DOS smoothed']!=hasattr(self,'original_DOS'):
+            report+='DOS smmoothing is corrupted!\nRedo self.DOSsmooth('\
+                'pts,power)\n'
+        if report=='':
+            print(self.name+'\n--------\nCheck done and all statuses are '\
+                  'good!\n')
+        else:
+            print(self.name+'\n--------\n'+report)
         
     def read_gaussian_MO(self,MOenergy):
         self.MOenergy=MOenergy
@@ -122,6 +154,7 @@ class APS:
         baseline_res=shgo(lambda x: -APS.mofun(x,0.3,self.APSdata),
                           [baseline_bounds],iters=2)
         self.baseline=baseline_res.x
+        self.status['baseline']=float(self.baseline)
         if plot==True:
             plt.figure()
             self.plot()
@@ -133,6 +166,7 @@ class APS:
         index=next(len(self.APSdata)-i for i,j in enumerate(self.APSdata[::-1]
                                                  -self.baseline) if j<0)
         self.cutoff_index,self.cutoff_energy=index,self.energy[index]
+        self.status['cutoff']=True
         
     def plot(self):
         plt.grid(True,which='both',axis='x')
@@ -147,30 +181,39 @@ class APS:
                      [0,np.polyval(self.lin_par,self.energy[
                          self.lin_stop_index])],'--',c=fig[0]._color)
         if hasattr(self,'fit_par') and hasattr(self,'APSfit'):
-            plt.plot(self.energy,self.APSfit,label='fit: c=%1.4f, shift=%1.4f, scale=%2.1f' %tuple(self.fit_par))
+            plt.plot(self.energy,self.APSfit,label=
+                     'fit: c=%1.4f, shift=%1.4f, scale=%2.1f' %tuple(self.fit_par))
         plt.legend()
         plt.xlabel('Energy (eV)')
-        if self.sqrt==False:
+        if self.status['sqrt']==False:
             plt.ylabel('Photoemission^(1/3)  (a.u.)')
         else:
             plt.ylabel('Photoemission^(1/2)  (a.u.)')
         plt.autoscale(enable=True,axis='both',tight=True)
             
-    def DOSsmooth(self,*args,plot=False):
-        self.DOS_origin=self.DOS
-        self.DOS=savgol_filter(self.DOS,*args)
+    def DOSsmooth(self,*args,plot=False,**kwargs):
+        if not hasattr(self,'DOS'):
+            raise Exception("Calculate DOS with self.DOS_analyze()")
+        if hasattr(self,'DOS_original'):
+            self.DOS=self.DOS_original
+        else:
+            self.DOS_original=self.DOS
+        self.DOS=savgol_filter(self.DOS,*args,**kwargs)
+        self.status['DOS smoothed']=True
         if plot:
             plt.figure()
-            plt.plot(self.energy,self.DOS_origin,label='no smooth')
+            plt.plot(self.energy,self.DOS_original,label='no smooth')
             self.DOSplot()
             plt.legend()
         
     def DOSplot(self):
+        if not hasattr(self,'DOS'):
+            raise Exception("Calculate DOS with self.DOS_analyze()")
         plt.grid(True,which='both',axis='x')
         if not hasattr(self,'cutoff_energy'):
             self.find_cutoff()
-        index=self.cutoff_index-5
-        _=plt.plot(self.energy[index:],self.DOS[index:],'*-',label=self.name,
+        # index=self.cutoff_index-5
+        _=plt.plot(self.energy,self.DOS,'*-',label=self.name,
                    mfc='none')
         plt.axhline(y=0, color='k',ls='--')
         plt.autoscale(enable=True,axis='both',tight=True)
@@ -178,6 +221,26 @@ class APS:
         plt.xlabel('Energy (eV)')
         plt.ylabel('DOS (a.u.)')
 
+    # def DOS_analyze(self,bg=70,plot=False):
+    #     if not hasattr(self,'baseline'):
+    #         self.find_baseline(plot=False)
+    #     if not hasattr(self,'cutoff_index'):
+    #         self.find_cutoff()
+    #     if self.status['sqrt']:
+    #         Int_corr_raw=self.APSdata**2
+    #     else:
+    #         Int_corr_raw=self.APSdata**3
+    #     bg_avg=np.average(Int_corr_raw[:self.cutoff_index])
+    #     Int_corr_raw=Int_corr_raw-bg_avg+bg
+    #     if self.status['sqrt']:
+    #         self.DOS=np.gradient(Int_corr_raw**(1/2),self.energy)
+    #     else:
+    #         self.DOS=np.gradient(Int_corr_raw**(1/3),self.energy)
+    #     if plot:
+    #         plt.figure()
+    #         self.DOSplot()
+    #     self.status['DOS_analyzed']=True
+        
     def analyze(self, fit_lower_bound=0.5,fit_upper_bound=np.inf,smoothness=2,
                 plot=True):
         if smoothness==1:   gap=5
@@ -204,6 +267,7 @@ class APS:
             self.plot()
             raise Exception("Fitting fail!!! Rechoose fitting condition.")
         self.homo=-self.lin_par[1]/self.lin_par[0]
+        self.status['analyzed']=True
         if plot:
             fig=plt.figure()
             ax=fig.gca()
@@ -219,6 +283,8 @@ class APS:
             print(self.name+' is using the minimum number of points\t')
     
     def DOSfit(self,p0):
+        # if not hasattr(self,'DOS'):
+        #     raise Exception("Calculate DOS with self.DOS_analyze()")
         self.pick_range()
         fit,_=curve_fit(lambda x,scale,c,center: scale*APS.gaussian(x,c,center),self.energy[self.minindex:self.maxindex],self.DOS[self.minindex:self.maxindex],p0)
         plt.figure()
@@ -252,14 +318,21 @@ class APS:
         for file in filenames:
             with open(file,newline='') as f:
                 reader=csv.reader(f)
-                for i,j in enumerate(f):
-                    if j[:3]==' WF': stopindex=i
+                for i,j in enumerate(reader):
+                    try:
+                        if not float(j[3])<1e4:
+                            stopindex=i
+                            break
+                    except:
+                        if j[0][:3]==' WF':
+                            stopindex=i
+                            break
                 f.seek(0)
                 acceptlines=range(1,stopindex)
                 temp=np.array([[float(j[save_index[0]]),
                                 float(j[save_index[1]])] 
                                for i,j in enumerate(reader)
-                               if i in acceptlines if float(j[3])<1e4])
+                               if i in acceptlines])
             data.append(cls(temp[:,0],temp[:,1],sqrt,split(file)[1][:trunc]))
         return data
     
@@ -269,7 +342,6 @@ class APS:
         APS_obj=cls(energy,APSdata,sqrt,Name)
         APS_obj.find_baseline(plot=False)
         APS_obj.APSdata-=APS_obj.baseline
-        APS_obj.baseline=0
         return APS_obj
 
     @staticmethod
@@ -284,8 +356,10 @@ class APS:
         **kwargs are sqrt and/or Name for APS object.
         '''
         assert len(data)==len(coeff), 'Dimension mismatch'
-        assert all(data[i].sqrt==data[i+1].sqrt for i in range(len(data)-1)
-                   ),'data has to be the same sqrt type'
+        assert all(data[i].status['sqrt']==data[i+1].status['sqrt'] 
+                   for i in range(len(data)-1)),'data has to be the same sqrt type'
+        # assert all(data[i].status['DOS_analyzed']==data[i+1].status['DOS_analyzed']
+        #            for i in range(len(data)-1)),'DOS_analyze not yet done'
         energy,DOS=[i.energy for i in data],[i.DOS for i in data]
         energy,DOS=find_overlap(energy,DOS)
         DOS=np.dot(coeff,DOS)
@@ -300,6 +374,8 @@ class APS:
         Linear combine multiple DOS from source to fit the DOS of target.
         source is a list of APS objects [APS1,APS2,...] to fit APS obj target.
         '''
+        # assert all([hasattr(i,'DOS_analyzed') for i in [*source,target]]
+        #            ),'DOS_analyze not yet done'
         if any([not hasattr(i,'cutoff_index') for i in [*source,target]]):
             _=[i.find_cutoff() for i in [*source,target]]
         cutoff_energy=[i.cutoff_energy for i in source]
@@ -327,7 +403,7 @@ class APS:
     @staticmethod
     def save_aps_csv(data,location,filename='APS'):
         datanames=[i.name for i in data]
-        origin_header=[['Energy','Photoemission\\+(1/3)'],['eV','a.u.']] if all([i.sqrt==False for i in data]) else [['Energy','Photoemission\\+(1/2)'],['eV','a.u.']]
+        origin_header=[['Energy','Photoemission\\+(1/3)'],['eV','a.u.']] if all([i.status['sqrt']==False for i in data]) else [['Energy','Photoemission\\+(1/2)'],['eV','a.u.']]
         x,y=[i.energy for i in data],[i.APSdata-i.baseline if 
                                       hasattr(i,'baseline') else i.APSdata 
                                       for i in data]
@@ -335,7 +411,8 @@ class APS:
 
     @staticmethod
     def save_aps_fit_csv(data,location,filename='APS_linear_regression'):
-        origin_header=[['Energy','Photoemission\\+(1/3)'],['eV','a.u.']] if all([i.sqrt==False for i in data]) else [['Energy','Photoemission\\+(1/2)'],['eV','a.u.']]
+        assert all(i.status['analyzed'] for i in data), 'Input not yet analyzed'
+        origin_header=[['Energy','Photoemission\\+(1/3)'],['eV','a.u.']] if all([i.status['sqrt']==False for i in data]) else [['Energy','Photoemission\\+(1/2)'],['eV','a.u.']]
         datanames=[i.name for i in data]
         x=[np.array([i.homo,i.energy[i.lin_stop_index]]) for i in data]
         y=[np.array([0,np.polyval(i.lin_par,i.energy[i.lin_stop_index])]) for i in data]
@@ -343,6 +420,7 @@ class APS:
     
     @staticmethod
     def save_homo_error_csv(data,location,filename='APS_HOMO'):
+        assert all(i.status['analyzed'] for i in data), 'Input not yet analyze'
         origin_header=[['Material','Energy','HOMO std'],[None,'eV','eV']]
         datanames=['HOMO']
         x=[[i.name for i in data]]
@@ -352,6 +430,7 @@ class APS:
         
     @staticmethod
     def save_DOS_csv(data,location,filename='DOS'):
+        assert all(i.status['DOS_analyzed'] for i in data), 'Input not yet DOS_analyzed'
         origin_header=[['Energy','DOS'],['eV','a.u.']]
         datanames=[i.name for i in data]
         x,y=[i.energy for i in data],[i.DOS for i in data]
@@ -375,20 +454,39 @@ class dwf:
         self.time=np.array(time)
         self.CPDdata=np.array(CPDdata)
         self.name=name
-        self.cal=False
         self.data_type,self.data_unit='CPD','meV'
         try:
             self.__dict__.update((i,kwargs[i]) for i in self.allowed_kwargs)
         except KeyError:
             raise Exception('expect key words '+','.join(self.allowed_kwargs)
                             + ' missing')
+        self.status={'calibrated':False, 'statistics':False}
         
     def __repr__(self):
         return self.name
     
     def __str__(self):
-        return self.name
+        summary='Name:\t'+self.name+'\n'
+        summary+='\n'.join([i+':\t'+str(j) for i,j in self.status.items()])+'\n'
+        if self.status['statistics']==True:
+            summary+='Statistic region:\tlast '+str(self.length)+\
+                's\naverage:\t%1.2f\u00b1%0.2feV\n'%(self.average_CPD
+                                                     ,self.std_CPD)
+        return summary
     
+    def status_check(self):
+        report=''
+        if self.status['calibrated']!=(self.data_type=='Fermi level'):
+            report+='Calibration is corrupted!\nRedo calibration\n'
+        if self.status['statistics']!=hasattr(self,'average_CPD'):
+            report+='Statistic is corrupted!\nRedo self.dwf_stat('\
+                'length)\n'
+        if report=='':
+            print(self.name+'\n--------\nCheck done and all statuses are '\
+                  'good!\n')
+        else:
+            print(self.name+'\n--------\n'+report)
+            
     def plot(self):
         plt.grid(True,which='both',axis='both')
         plt.plot(self.time,self.CPDdata,label=self.name)
@@ -403,6 +501,7 @@ class dwf:
         self.average_CPD=np.average(self.CPDdata[start:])
         self.std_CPD=np.std(self.CPDdata[start:])
         self.length=length
+        self.status['statistics']=True
             
     @classmethod
     def import_from_files(cls,filenames,trunc=-4,**kwargs):
@@ -421,13 +520,13 @@ class dwf:
                                 float(j[save_index[1]])] 
                                for i,j in enumerate(reader) 
                                if i in acceptlines])
-            data.append(cls(temp[:,0],temp[:,1],split(file)[1][:-4],**kwargs))
+            data.append(cls(temp[:,0],temp[:,1],split(file)[1][:trunc],**kwargs))
         return data
     
     @staticmethod
     def save_csv(data,location,filename='DWF'):
         assert all([data[i].__class__==data[i+1].__class__ for i in range(len(data)-1)]), 'Data are not the same class objects'
-        origin_header=[['Time',data[0].data_type],[None,data[0].data_unit]]
+        origin_header=[['Time',data[0].data_type],['s',data[0].data_unit]]
         datanames=[i.name for i in data]
         x=[i.time for i in data]
         y=[i.CPDdata for i in data]
@@ -436,7 +535,7 @@ class dwf:
     @staticmethod
     def save_dwf_stat_csv(data,location,filename='DWF_stat'):
         assert all([data[i].__class__==data[i+1].__class__ for i in range(len(data)-1)]), 'Data are not the same class objects'
-        if not all([hasattr(i,'average_CPD') for i in data]):
+        if not all([i.status['statistics'] for i in data]):
             print('Use last 200sec data for statistic analysis')
             _=[i.dwf_stat() for i in data]
         origin_header=[['Material','Energy',data[0].data_type+' std'],[None,data[0].data_unit,data[0].data_unit]]  
@@ -465,9 +564,8 @@ class calibrate:
             'Calibrate only applicable to CPD measurements'
         for i in data:
             i.CPDdata=-i.CPDdata/1000+self.tip_dwf
-            i.cal=True
             i.data_type,i.data_unit='Fermi level','eV'
-            i.dwf_stat()
+            i.status['calibrated']=True
 
 class spv(dwf):
     allowed_kwargs=['timemap']
@@ -478,24 +576,45 @@ class spv(dwf):
                              for i in self.timeline[:-1]]
         self.timeline_index.insert(0,0)
         self.timeline_index.append(len(self.time)-1)
-        self.bg_cal=False
+        # self.bg_cal=False
         self.data_type,self.data_unit='raw SPV','meV'
-        
+        self.status={'background calibrated':False, 'normalized':False}
+    
+    def __str__(self):
+        summary='Name:\t'+self.name+'\n'
+        summary+='\n'.join([i+':\t'+str(j) for i,j in self.status.items()])+'\n'
+        summary+='timemap:'+str(self.timemap)+'\n'
+        return summary
+    
+    def status_check(self):
+        report=''
+        if self.status['background calibrated']!=(self.data_type=='SPV'):
+            report+='Background calibration is corrupted!\nRedo self.cal_background()\n'
+        if self.status['normalized']!=hasattr(self,'norm_spv'):
+            report+='Noamlization is corrupted!\nRedo self.normalize('\
+                'timezone,plot)\n'
+        if report=='':
+            print(self.name+'\n--------\nCheck done and all statuses are '\
+                  'good!\n')
+        else:
+            print(self.name+'\n--------\n'+report)
+            
     def cal_background(self,plot=False):
         self.bg_cpd=np.average(self.CPDdata[0:self.timeline_index[1]])
         self.CPDdata=self.CPDdata-self.bg_cpd
         self.data_type='SPV'
-        self.bg_cal=True
+        self.status['background calibrated']=True
         if plot:
             plt.figure()
             self.plot()
         
     def normalize(self,timezone=1,plot=False):
-        if not self.bg_cal:
+        if not self.status['background calibrated']:
             self.cal_background()
         self.norm_zone=timezone
         scale_fac=max(abs(self.CPDdata[self.timeline_index[timezone]:self.timeline_index[timezone+1]]))
         self.norm_spv=self.CPDdata/scale_fac
+        self.status['normalized']=True
         if plot:
             plt.figure()
             self.norm_plot()
@@ -519,13 +638,13 @@ class spv(dwf):
             plt.axvspan(self.timeline[2*i],self.timeline[2*i+1],color='yellow',alpha=0.5)
     
     @staticmethod
-    def save_norm_spv_csv(data,location,trunc=-8,filename='Normalized_SPV'):
+    def save_norm_spv_csv(data,location,filename='Normalized_SPV'):
         assert all([data[i].__class__==data[i+1].__class__ for i in range(len(data)-1)]), 'Data are not the same class objects'
         if not all([hasattr(i,'norm_spv') for i in data]):
             print('Use first light on for normalization')
             _=[i.normalize() for i in data]
-        origin_header=[['Time','Normalized SPV'],[None,'a.u.']]
-        datanames=[i.name[:trunc] for i in data]
+        origin_header=[['Time','Normalized SPV'],['s','a.u.']]
+        datanames=[i.name for i in data]
         x=[i.time for i in data]
         y=[i.norm_spv for i in data]
         save_csv_for_origin((x,y),location,filename,datanames,origin_header)
