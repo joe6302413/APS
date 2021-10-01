@@ -25,8 +25,11 @@ Last editing time: 12/11/2020
 """
 #%% packages and libraries
 import matplotlib.pyplot as plt, tkinter as tk, tkinter.filedialog
-from os.path import split
+from os.path import normpath,split
+from os import getenv
 from apsmodule import APS
+onedrive=getenv('OneDrive')
+APSdir=normpath(onedrive+'\\Data\\APS')
 
 #%% clean filenames
 filenames=[]
@@ -34,20 +37,20 @@ filenames=[]
 #%% choose files
 root=tk.Tk()
 root.withdraw()
-filenames+=tkinter.filedialog.askopenfilenames(parent=root,initialdir='C:/Users/yc6017/OneDrive - Imperial College London/Data/APS', title='Please select APS files',filetypes=[('DAT','.DAT')])
+filenames+=tkinter.filedialog.askopenfilenames(parent=root,initialdir=APSdir, title='Please select APS files',filetypes=[('DAT','.DAT')])
 
 #%% load files into data
 plt.close('all')
 data=[]
-data+=APS.import_from_files(filenames)
+data+=APS.import_from_files(filenames,sqrt=(0,1,0))
 
 #%% analyze data
 plt.close('all')
 for i in data:
-    i.analyze(2,99)
+    i.analyze(0,23)
     
 #%% overlay all the data
-fig=plt.figure(999)
+fig=plt.figure('APS overlay')
 for i in data: i.plot()
     
 #%% Saving APS and APS fit and HOMO with error
@@ -60,7 +63,7 @@ APS.save_homo_error_csv(data,location)
 _=[i.DOSsmooth(7,3,plot=True) for i in data]
 
 #%% overlay all the DOS
-plt.figure(1000)
+plt.figure('DOS')
 for i in data: i.DOSplot()
 
 #%% Saving DOS into csv

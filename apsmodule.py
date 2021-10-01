@@ -2,7 +2,7 @@
 """
 Created on Mon Nov  9 16:30:53 2020
 
-The module for measurements done by APS04.
+The module is for measurements done by APS04.
 It includes a function for general csv saving in origin format.
 The class APS is for handling APS signals, cube(sqr)-root v.s. energy.
 The APS class has multiple methods for different physical quantities including HOMO level fit.
@@ -96,7 +96,7 @@ class APS:
         self.APSdata=np.array(APSdata)
         self.DOS=np.gradient(APSdata,energy)
         self.name=Name
-        self.status={'sqrt': sqrt,'baseline':False,
+        self.status={'sqrt': bool(sqrt),'baseline':False,
                      'cutoff': False,'analyzed':False, 'DOS_analyzed': True,
                      'DOS smoothed': False}
         
@@ -111,16 +111,17 @@ class APS:
                 self.homo,self.homo*self.std_homo)
         return summary
                
-    # def pick_range(self):
-    #     plt.figure()
-    #     plt.plot(self.energy,self.APSdata,'o',label='experiment')
-    #     plt.xlim(self.energy[0],self.energy[-1])
-    #     _=plt.title('Pick the range for fitting (min&max)')
-    #     [self.xmin,self.xmax]=np.array(plt.ginput(2))[:,0]
-    #     plt.close()
-    #     if self.xmax<self.xmin:
-    #         self.xmax,self.xmin=self.xmin,self.xmax
-    #     [self.minindex,self.maxindex]=[next(p for p,q in enumerate(self.energy) if q>self.xmin),next(p for p,q in enumerate(self.energy) if q>self.xmax)]
+    def pick_range(self):
+        plt.figure()
+        self.DOSplot()
+        _=plt.title('Pick the range for fitting (min&max)')
+        [self.xmin,self.xmax]=np.array(plt.ginput(2))[:,0]
+        plt.close()
+        if self.xmax<self.xmin:
+            self.xmax,self.xmin=self.xmin,self.xmax
+        minindex=next(p for p,q in enumerate(self.energy) if q>self.xmin)
+        maxindex=next(p for p,q in enumerate(self.energy) if q>self.xmax)
+        return minindex,maxindex
     
     def status_check(self):
         report=''
@@ -136,8 +137,7 @@ class APS:
         if self.status['analyzed']!=hasattr(self,'homo'):
             report+='Analaysis is corrupted!\nRedo self.analyze('\
                 'fit_lower_bound,fit_upper_bound)\n'
-        # if self.status['DOS_analyzed']!=hasattr(self,'DOS'):
-        #     report+='DOS is corrupted!\nRedo self.DOS_analyze(bg)\n'
+
         if self.status['DOS smoothed']!=hasattr(self,'original_DOS'):
             report+='DOS smmoothing is corrupted!\nRedo self.DOSsmooth('\
                 'pts,power)\n'
@@ -147,8 +147,8 @@ class APS:
         else:
             print(self.name+'\n--------\n'+report)
         
-    def read_gaussian_MO(self,MOenergy):
-        self.MOenergy=MOenergy
+    # def read_gaussian_MO(self,MOenergy):
+    #     self.MOenergy=MOenergy
         
     def find_baseline(self,baseline_bounds=(1,5),plot=True):
         baseline_res=shgo(lambda x: -APS.mofun(x,0.3,self.APSdata),
@@ -220,26 +220,6 @@ class APS:
         plt.legend()
         plt.xlabel('Energy (eV)')
         plt.ylabel('DOS (a.u.)')
-
-    # def DOS_analyze(self,bg=70,plot=False):
-    #     if not hasattr(self,'baseline'):
-    #         self.find_baseline(plot=False)
-    #     if not hasattr(self,'cutoff_index'):
-    #         self.find_cutoff()
-    #     if self.status['sqrt']:
-    #         Int_corr_raw=self.APSdata**2
-    #     else:
-    #         Int_corr_raw=self.APSdata**3
-    #     bg_avg=np.average(Int_corr_raw[:self.cutoff_index])
-    #     Int_corr_raw=Int_corr_raw-bg_avg+bg
-    #     if self.status['sqrt']:
-    #         self.DOS=np.gradient(Int_corr_raw**(1/2),self.energy)
-    #     else:
-    #         self.DOS=np.gradient(Int_corr_raw**(1/3),self.energy)
-    #     if plot:
-    #         plt.figure()
-    #         self.DOSplot()
-    #     self.status['DOS_analyzed']=True
         
     def analyze(self, fit_lower_bound=0.5,fit_upper_bound=np.inf,smoothness=2,
                 plot=True):
@@ -285,37 +265,47 @@ class APS:
     def DOSfit(self,p0):
         # if not hasattr(self,'DOS'):
         #     raise Exception("Calculate DOS with self.DOS_analyze()")
-        self.pick_range()
-        fit,_=curve_fit(lambda x,scale,c,center: scale*APS.gaussian(x,c,center),self.energy[self.minindex:self.maxindex],self.DOS[self.minindex:self.maxindex],p0)
+        minindex,maxindex=self.pick_range()
+        fit,_=curve_fit(lambda x,scale,c,center: scale*APS.gaussian(x,c,center),self.energy[minindex:maxindex],self.DOS[minindex:maxindex],p0)
         plt.figure()
-        plt.plot(self.energy[self.minindex:self.maxindex],fit[0]*APS.gaussian(self.energy[self.minindex:self.maxindex],*fit[1:3]),label='fit')
+        plt.plot(self.energy[minindex:maxindex],fit[0]*APS.gaussian(self.energy[minindex:maxindex],*fit[1:3]),label='fit')
         self.DOSplot()
 
-    # def APSfit(self,p0=[0.12,0.2,5],bounds=([0.1,-0.5,0.01],[0.5,0.5,1e4]),repick=True):
-    #     self.p0=p0
-    #     self.bounds=bounds
-    #     if repick:
-    #         self.pick_range()
-    #     if not hasattr(self, 'MOenergy'):
-    #         self.read_gaussian_MO(np.array(input("Input MOs from Gaussian:\n").split(),'float'))
-    #     self.fit_par,_ = curve_fit(lambda x,c,scale,shift: self.apsfun(x,c,scale,self.MOenergy-shift),self.energy[self.minindex:self.maxindex],self.APSdata[self.minindex:self.maxindex],p0=[0.12,5,0.2],bounds=([0.1,0.01,-0.5],[0.5,1e4,0.5]),absolute_sigma=True,ftol=1e-12)
-    #     plt.figure()
-    #     plt.plot(self.energy,self.APSdata,'o',label='experiment')
-    #     self.APSfit=self.apsfun(self.energy,*self.fit_par[:-1],self.MOenergy-self.fit_par[-1])
-    #     plt.plot(self.energy,self.APSfit,label='fit: c=%1.4f, shift=%1.4f, scale=%2.1f' %tuple(self.fit_par))
-    #     plt.xlabel('Energy (eV)')
-    #     plt.ylabel('Photoemission^1/3 (a.u.)')
-    #     plt.legend()
-    #     plt.title('FitAPS')
-    #     print('Broaden facter=%1.4f, shift=%1.4f, scale=%2.1f' %tuple(self.fit_par))
+    def MOfit(self,p0=[2,0.12,0.2],bounds=([0.01,0.1,-0.5],[1e2,0.3,0.5]),repick=True):
+        if self.status['baseline']==False:
+            self.find_baseline()
+            print('Automatic find baseline between (1,5) for '+self.name)
+        self.p0=p0
+        self.bounds=bounds
+        if repick:
+            minindex,maxindex=self.pick_range()
+            self.MOfit_range=(self.energy[minindex],self.energy[maxindex])
+        else:
+            assert hasattr(self,'MOfit_range'), 'No previous fitting range!'
+            minindex,maxindex=self.MOfit_range
+        if not hasattr(self, 'MOenergy'):
+            MOenergy=np.array(input("Input MOs from Gaussian:\n").split(),'float')
+            self.MOenergy=MOenergy
+        x=self.energy[minindex:maxindex]
+        y=self.APSdata[minindex:maxindex]-self.baseline
+        self.MOfit_par,_ = curve_fit(lambda x,scale,c,shift: scale*self.mofun(x,c,self.MOenergy-shift),x,y,p0=p0,bounds=bounds,absolute_sigma=True,ftol=1e-12)
+        plt.figure()
+        self.DOSplot()
+        MOfit=self.MOfit_par[0]*self.mofun(self.energy,self.MOfit_par[1],self.MOenergy-self.MOfit_par[-1])
+        plt.plot(self.energy,MOfit,label='fit: scale=%2.1f, c=%1.4f, shift=%1.4f' %tuple(self.MOfit_par))
+        plt.xlabel('Energy (eV)')
+        plt.ylabel('Photoemission^1/3 (a.u.)')
+        plt.legend()
+        plt.title('FitAPS')
+        print('scale=%1.4f, broaden facter=%1.4f, shift=%2.1f' %tuple(self.MOfit_par))
         
     @classmethod
     def import_from_files(cls,filenames,sqrt=False,trunc=-4):
         data=[]
-        save_index=[2,6] if sqrt else [2,7] 
+        sqrt=np.resize(sqrt,len(filenames))
         # index of saved column from raw data. 2 is energy and 7 is cuberoot. 
         #6 is square-root.
-        for file in filenames:
+        for file,sqrt_type in zip(filenames,sqrt):
             with open(file,newline='') as f:
                 reader=csv.reader(f)
                 for i,j in enumerate(reader):
@@ -329,11 +319,12 @@ class APS:
                             break
                 f.seek(0)
                 acceptlines=range(1,stopindex)
+                save_index=[2,6] if sqrt_type else [2,7]
                 temp=np.array([[float(j[save_index[0]]),
                                 float(j[save_index[1]])] 
                                for i,j in enumerate(reader)
                                if i in acceptlines])
-            data.append(cls(temp[:,0],temp[:,1],sqrt,split(file)[1][:trunc]))
+            data.append(cls(temp[:,0],temp[:,1],sqrt_type,split(file)[1][:trunc]))
         return data
     
     @classmethod
@@ -358,8 +349,6 @@ class APS:
         assert len(data)==len(coeff), 'Dimension mismatch'
         assert all(data[i].status['sqrt']==data[i+1].status['sqrt'] 
                    for i in range(len(data)-1)),'data has to be the same sqrt type'
-        # assert all(data[i].status['DOS_analyzed']==data[i+1].status['DOS_analyzed']
-        #            for i in range(len(data)-1)),'DOS_analyze not yet done'
         energy,DOS=[i.energy for i in data],[i.DOS for i in data]
         energy,DOS=find_overlap(energy,DOS)
         DOS=np.dot(coeff,DOS)
@@ -374,8 +363,6 @@ class APS:
         Linear combine multiple DOS from source to fit the DOS of target.
         source is a list of APS objects [APS1,APS2,...] to fit APS obj target.
         '''
-        # assert all([hasattr(i,'DOS_analyzed') for i in [*source,target]]
-        #            ),'DOS_analyze not yet done'
         if any([not hasattr(i,'cutoff_index') for i in [*source,target]]):
             _=[i.find_cutoff() for i in [*source,target]]
         cutoff_energy=[i.cutoff_energy for i in source]
