@@ -20,8 +20,11 @@ Last editing time: 03/12/2020
 """
 #%% Packages and libraries
 import matplotlib.pyplot as plt, tkinter as tk, tkinter.filedialog
-from os.path import split
+from os.path import normpath,split
+from os import getenv
 from apsmodule import dwf, APS, calibrate
+onedrive=getenv('OneDrive')
+APSdir=normpath(onedrive+'\\Data\\APS')
 
 #%% Clean filenames
 filenames=[]
@@ -29,7 +32,7 @@ filenames=[]
 #%% Choose files
 root=tk.Tk()
 root.withdraw()
-filenames+=tkinter.filedialog.askopenfilenames(parent=root,initialdir='C:/Users/yc6017/OneDrive - Imperial College London/Data/APS', title='Please select dwf files',filetypes=[('DAT','.DAT')])
+filenames+=tkinter.filedialog.askopenfilenames(parent=root,initialdir=APSdir, title='Please select dwf files',filetypes=[('DAT','.DAT')])
 location=split(filenames[0])[0]
 
 #%% Load files into data

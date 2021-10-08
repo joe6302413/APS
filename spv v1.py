@@ -20,8 +20,11 @@ Last editing time: 03/12/2020
 """
 #%% Packages and libraries
 import matplotlib.pyplot as plt, tkinter as tk, tkinter.filedialog
-from os.path import split
+from os.path import normpath,split
+from os import getenv
 from apsmodule import spv
+onedrive=getenv('OneDrive')
+APSdir=normpath(onedrive+'\\Data\\APS')
 
 #%% Clean filenames
 filenames=[]
@@ -29,7 +32,7 @@ filenames=[]
 #%% Choose files
 root=tk.Tk()
 root.withdraw()
-filenames+=tkinter.filedialog.askopenfilenames(parent=root,initialdir='C:/Users/yc6017/OneDrive - Imperial College London/Data/APS', title='Please select SPV files',filetypes=[('DAT','.DAT')])
+filenames+=tkinter.filedialog.askopenfilenames(parent=root,initialdir=APSdir, title='Please select SPV files',filetypes=[('DAT','.DAT')])
 location=split(filenames[0])[0]
 
 #%% Load files into data
@@ -40,11 +43,19 @@ data+=spv.import_from_files(filenames,timemap=(20,100,150,100,150))
 #%% Calibrate background SPV
 for i in data:  i.cal_background(plot=False)
 
+#%% Plot SPV overlay
+plt.figure('SPV overlay')
+for i in data: i.plot()
+
 #%% Save SPV into csv
 spv.save_csv(data,location,filename='SPV')
 
 #%% Normalized SPV
 for i in data: i.normalize(plot=False)
+
+#%% Plot normalized SPV overlay
+plt.figure('normalized SPV overlay')
+for i in data: i.norm_plot()
 
 #%% Save normalized SPV into csv
 spv.save_norm_spv_csv(data,location)
