@@ -38,7 +38,7 @@ location=split(filenames[0])[0]
 #%% Load files into data
 plt.close('all')
 data=[]
-data+=spv.import_from_files(filenames,timemap=(20,150,100,150,100))
+data+=spv.import_from_files(filenames,timemap=(20,100,150,100,150))
 
 #%% Calibrate background SPV
 for i in data:  i.cal_background(plot=False)

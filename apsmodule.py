@@ -30,6 +30,14 @@ from scipy.signal import savgol_filter
 __version__='1.1'
 
 def save_csv_for_origin(data,location,filename=None,datanames=None,header=None):
+    '''
+    save data sets to csv format for origin.
+    data=([x1,x2,...],[y1,y2,...],...) where each element is a list of array
+    location string is the location for output file
+    string filename will be used as output into filename.csv
+    datanames=[name1,name2,...] names should be for each individual data sets
+    header=[[longname X, longname Y,...],[unit X, unit Y,...]]
+    '''
     data_dim=len(data)
     assert [len(i) for i in data][1:]==[len(i) for i in data][:-1], 'number of data mismatch'
     assert len(header[0])==data_dim, 'header mismatch data dimension'

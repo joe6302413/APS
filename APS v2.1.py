@@ -42,12 +42,12 @@ filenames+=tkinter.filedialog.askopenfilenames(parent=root,initialdir=APSdir, ti
 #%% load files into data
 plt.close('all')
 data=[]
-data+=APS.import_from_files(filenames,sqrt=(0,1,0))
+data+=APS.import_from_files(filenames,sqrt=False)
 
 #%% analyze data
 plt.close('all')
 for i in data:
-    i.analyze(0,23)
+    i.analyze(5,9999)
     
 #%% overlay all the data
 fig=plt.figure('APS overlay')
