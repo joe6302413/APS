@@ -280,9 +280,9 @@ class APS:
         self.DOSplot()
 
     def MOfit(self,p0=[2,0.12,0.2],bounds=([0.01,0.1,-0.5],[1e2,0.3,0.5]),repick=True):
-        if self.status['baseline']==False:
-            self.find_baseline()
-            print('Automatic find baseline between (1,5) for '+self.name)
+        # if self.status['baseline']==False:
+        #     self.find_baseline()
+        #     print('Automatic find baseline between (1,5) for '+self.name)
         self.p0=p0
         self.bounds=bounds
         if repick:
@@ -293,9 +293,9 @@ class APS:
             minindex,maxindex=self.MOfit_range
         if not hasattr(self, 'MOenergy'):
             MOenergy=np.array(input("Input MOs from Gaussian:\n").split(),'float')
-            self.MOenergy=MOenergy
+            self.MOenergy=np.abs(MOenergy)
         x=self.energy[minindex:maxindex]
-        y=self.APSdata[minindex:maxindex]-self.baseline
+        y=self.DOS[minindex:maxindex]
         self.MOfit_par,_ = curve_fit(lambda x,scale,c,shift: scale*self.mofun(x,c,self.MOenergy-shift),x,y,p0=p0,bounds=bounds,absolute_sigma=True,ftol=1e-12)
         plt.figure()
         self.DOSplot()
@@ -314,7 +314,7 @@ class APS:
         # index of saved column from raw data. 2 is energy and 7 is cuberoot. 
         #6 is square-root.
         for file,sqrt_type in zip(filenames,sqrt):
-            with open(file,newline='') as f:
+            with open(file,'r',newline='') as f:
                 reader=csv.reader(f)
                 for i,j in enumerate(reader):
                     try:
@@ -503,7 +503,7 @@ class dwf:
         data=[]
         save_index=[-3,2]
         for file in filenames:
-            with open(file,newline='') as f:
+            with open(file,'r',newline='') as f:
                 reader=csv.reader(f)
                 for i,j in enumerate(reader):
                     if len(j)==1:
