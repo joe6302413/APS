@@ -197,6 +197,7 @@ class APS:
         else:
             plt.ylabel('Photoemission^(1/2)  (a.u.)')
         plt.autoscale(enable=True,axis='both',tight=True)
+        plt.gca().set_ylim(bottom=-0.5)
             
     def DOSsmooth(self,*args,plot=False,**kwargs):
         if not hasattr(self,'DOS'):
@@ -205,11 +206,15 @@ class APS:
             self.DOS=self.DOS_original
         else:
             self.DOS_original=self.DOS
+        if not hasattr(self,'cutoff_energy'):
+            self.find_cutoff()
         self.DOS=savgol_filter(self.DOS,*args,**kwargs)
         self.status['DOS smoothed']=True
         if plot:
             plt.figure()
-            plt.plot(self.energy,self.DOS_original,label='no smooth')
+            index=self.cutoff_index-5
+            _=plt.plot(self.energy[index:],self.DOS_original[index:],'o-',
+                       label='no smooth',mfc='none')
             self.DOSplot()
             plt.legend()
         
@@ -219,11 +224,12 @@ class APS:
         plt.grid(True,which='both',axis='x')
         if not hasattr(self,'cutoff_energy'):
             self.find_cutoff()
-        # index=self.cutoff_index-5
-        _=plt.plot(self.energy,self.DOS,'*-',label=self.name,
+        index=self.cutoff_index-5
+        _=plt.plot(self.energy[index:],self.DOS[index:],'*-',label=self.name,
                    mfc='none')
         plt.axhline(y=0, color='k',ls='--')
         plt.autoscale(enable=True,axis='both',tight=True)
+        plt.gca().set_ylim(bottom=-0.5)
         plt.legend()
         plt.xlabel('Energy (eV)')
         plt.ylabel('DOS (a.u.)')
@@ -308,6 +314,10 @@ class APS:
         
     @classmethod
     def import_from_files(cls,filenames,sqrt=False,trunc=-4):
+        '''
+        This classmethod is used to import APS files from KPtechnology output.
+        The software can do all the fitting parts but not able to handle the turn-on threshold because the threshold data is the IP of KPtechnology.
+        '''
         data=[]
         sqrt=np.resize(sqrt,len(filenames))
         # index of saved column from raw data. 2 is energy and 7 is cuberoot. 
