@@ -32,13 +32,16 @@ filenames=[]
 #%% Choose files
 root=tk.Tk()
 root.withdraw()
-filenames+=tkinter.filedialog.askopenfilenames(parent=root,initialdir=APSdir, title='Please select SPV files',filetypes=[('DAT','.DAT')])
+root.iconify()
+# root.call('wm', 'attributes', '.', '-topmost', True)
+filenames+=tk.filedialog.askopenfilenames(parent=root,initialdir=APSdir, title='Please select SPV files',filetypes=[('DAT','.DAT')])
+root.destroy()
 location=split(filenames[0])[0]
 
 #%% Load files into data
 plt.close('all')
 data=[]
-data+=spv.import_from_files(filenames,timemap=(20,100,150,100,150))
+data+=spv.import_from_files(filenames,timemap=(20,100,150,100,150),trunc=-8)
 
 #%% Calibrate background SPV
 for i in data:  i.cal_background(plot=False)

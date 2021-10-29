@@ -32,30 +32,38 @@ filenames=[]
 #%% Choose files
 root=tk.Tk()
 root.withdraw()
-filenames+=tkinter.filedialog.askopenfilenames(parent=root,initialdir=APSdir, title='Please select dwf files',filetypes=[('DAT','.DAT')])
+root.iconify()
+# root.call('wm', 'attributes', '.', '-topmost', True)
+filenames+=tk.filedialog.askopenfilenames(parent=root, initialdir=APSdir, title='Please select dwf files',filetypes=[('DAT','.DAT')])
+root.destroy()
 location=split(filenames[0])[0]
 
 #%% Load files into data
 plt.close('all')
 data=[]
-data+=dwf.import_from_files(filenames)
+data+=dwf.import_from_files(filenames,trunc=-8)
 
 #%% Choose ref APS,dwf and load it
 root=tk.Tk()
 root.withdraw()
-ref_APS_file=[tkinter.filedialog.askopenfilename(parent=root,initialdir=location, title='Please select ref APS files',filetypes=[('DAT','.DAT')])]
-
+root.iconify()
+# root.call('wm', 'attributes', '.', '-topmost', True)
+ref_APS_file=[tk.filedialog.askopenfilename(parent=root,initialdir=location, title='Please select ref APS files',filetypes=[('DAT','.DAT')])]
+root.destroy()
 
 root=tk.Tk()
 root.withdraw()
-ref_dwf_file=[tkinter.filedialog.askopenfilename(parent=root,initialdir=location, title='Please select ref dwf files',filetypes=[('DAT','.DAT')])]
+root.iconify()
+# root.call('wm', 'attributes', '.', '-topmost', True)
+ref_dwf_file=[tk.filedialog.askopenfilename(parent=root,initialdir=location, title='Please select ref dwf files',filetypes=[('DAT','.DAT')])]
+root.destroy()
 
 #%% Load ref APS and ref dwf
 [ref_APS]=APS.import_from_files(ref_APS_file,sqrt=True)
 [ref_dwf]=dwf.import_from_files(ref_dwf_file)
 
 #%% Analyze ref_APS and dwf_stat ref_dwf
-ref_APS.analyze(fit_lower_bound=10,fit_upper_bound=50,smoothness=3,
+ref_APS.analyze(fit_lower_bound=5,fit_upper_bound=50,smoothness=3,
                 plot=True)
 ref_dwf.dwf_stat(length=200)
 

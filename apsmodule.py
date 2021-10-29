@@ -35,7 +35,7 @@ def save_csv_for_origin(data,location,filename=None,datanames=None,header=None):
     data=([x1,x2,...],[y1,y2,...],...) where each element is a list of array
     location string is the location for output file
     string filename will be used as output into filename.csv
-    datanames=[name1,name2,...] names should be for each individual data sets
+    datanames=[[yname1,zname1,...],[yname2,zname2]] names should be for each individual data sets
     header=[[longname X, longname Y,...],[unit X, unit Y,...]]
     '''
     data_dim=len(data)
@@ -44,14 +44,13 @@ def save_csv_for_origin(data,location,filename=None,datanames=None,header=None):
     numberofdata=len(data[0])
     data=[j for i in zip(*data) for j in i]
     maxlength=max(len(i) for i in data)
-    data=np.transpose([np.append(i,[None]*(maxlength-len(i))) for i in data])
+    data=np.transpose([np.append(i,['']*(maxlength-len(i))) for i in data])
     if datanames==None:
         datanames=[['data'+str(i) for i in range(numberofdata) for j in range(data_dim)]]
     else:
-        datanames=[[j for i in datanames for j in ([None]+[i]*(data_dim-1))]]
-        # datanames=[[i for i in datanames for j in range(data_dim)]]
+        datanames=[[j for i in datanames for j in (['']+i+['']*(data_dim-1-len(i)))]]
     if header==None:
-        header=datanames+[[None]*numberofdata*data_dim]
+        header=datanames+[['']*numberofdata*data_dim]
     else:
         header=[i*numberofdata for i in header]
     with open(join(location,str(filename)+'.csv'),'w',newline='') as f:
@@ -198,6 +197,7 @@ class APS:
         else:
             plt.ylabel('Photoemission^(1/2)  (a.u.)')
         plt.autoscale(enable=True,axis='both',tight=True)
+        plt.gca().set_ylim(bottom=-0.5)
             
     def DOSsmooth(self,*args,plot=False,**kwargs):
         if not hasattr(self,'DOS'):
@@ -206,11 +206,15 @@ class APS:
             self.DOS=self.DOS_original
         else:
             self.DOS_original=self.DOS
+        if not hasattr(self,'cutoff_energy'):
+            self.find_cutoff()
         self.DOS=savgol_filter(self.DOS,*args,**kwargs)
         self.status['DOS smoothed']=True
         if plot:
             plt.figure()
-            plt.plot(self.energy,self.DOS_original,label='no smooth')
+            index=self.cutoff_index-5
+            _=plt.plot(self.energy[index:],self.DOS_original[index:],'o-',
+                       label='no smooth',mfc='none')
             self.DOSplot()
             plt.legend()
         
@@ -220,11 +224,12 @@ class APS:
         plt.grid(True,which='both',axis='x')
         if not hasattr(self,'cutoff_energy'):
             self.find_cutoff()
-        # index=self.cutoff_index-5
-        _=plt.plot(self.energy,self.DOS,'*-',label=self.name,
+        index=self.cutoff_index-5
+        _=plt.plot(self.energy[index:],self.DOS[index:],'*-',label=self.name,
                    mfc='none')
         plt.axhline(y=0, color='k',ls='--')
         plt.autoscale(enable=True,axis='both',tight=True)
+        plt.gca().set_ylim(bottom=-0.5)
         plt.legend()
         plt.xlabel('Energy (eV)')
         plt.ylabel('DOS (a.u.)')
@@ -280,9 +285,9 @@ class APS:
         self.DOSplot()
 
     def MOfit(self,p0=[2,0.12,0.2],bounds=([0.01,0.1,-0.5],[1e2,0.3,0.5]),repick=True):
-        if self.status['baseline']==False:
-            self.find_baseline()
-            print('Automatic find baseline between (1,5) for '+self.name)
+        # if self.status['baseline']==False:
+        #     self.find_baseline()
+        #     print('Automatic find baseline between (1,5) for '+self.name)
         self.p0=p0
         self.bounds=bounds
         if repick:
@@ -293,13 +298,13 @@ class APS:
             minindex,maxindex=self.MOfit_range
         if not hasattr(self, 'MOenergy'):
             MOenergy=np.array(input("Input MOs from Gaussian:\n").split(),'float')
-            self.MOenergy=MOenergy
+            self.MOenergy=np.abs(MOenergy)
         x=self.energy[minindex:maxindex]
-        y=self.APSdata[minindex:maxindex]-self.baseline
-        self.MOfit_par,_ = curve_fit(lambda x,scale,c,shift: scale*self.mofun(x,c,self.MOenergy-shift),x,y,p0=p0,bounds=bounds,absolute_sigma=True,ftol=1e-12)
+        y=self.DOS[minindex:maxindex]
+        self.MOfit_par,_ = curve_fit(lambda x,scale,c,shift: scale*self.mofun(x,c,self.MOenergy+shift),x,y,p0=p0,bounds=bounds,absolute_sigma=True,ftol=1e-12)
         plt.figure()
         self.DOSplot()
-        MOfit=self.MOfit_par[0]*self.mofun(self.energy,self.MOfit_par[1],self.MOenergy-self.MOfit_par[-1])
+        MOfit=self.MOfit_par[0]*self.mofun(self.energy,self.MOfit_par[1],self.MOenergy+self.MOfit_par[-1])
         plt.plot(self.energy,MOfit,label='fit: scale=%2.1f, c=%1.4f, shift=%1.4f' %tuple(self.MOfit_par))
         plt.xlabel('Energy (eV)')
         plt.ylabel('Photoemission^1/3 (a.u.)')
@@ -309,12 +314,16 @@ class APS:
         
     @classmethod
     def import_from_files(cls,filenames,sqrt=False,trunc=-4):
+        '''
+        This classmethod is used to import APS files from KPtechnology output.
+        The software can do all the fitting parts but not able to handle the turn-on threshold because the threshold data is the IP of KPtechnology.
+        '''
         data=[]
         sqrt=np.resize(sqrt,len(filenames))
         # index of saved column from raw data. 2 is energy and 7 is cuberoot. 
         #6 is square-root.
         for file,sqrt_type in zip(filenames,sqrt):
-            with open(file,newline='') as f:
+            with open(file,'r',newline='') as f:
                 reader=csv.reader(f)
                 for i,j in enumerate(reader):
                     try:
@@ -397,7 +406,7 @@ class APS:
     
     @staticmethod
     def save_aps_csv(data,location,filename='APS'):
-        datanames=[i.name for i in data]
+        datanames=[[i.name] for i in data]
         origin_header=[['Energy','Photoemission\\+(1/3)'],['eV','a.u.']] if all([i.status['sqrt']==False for i in data]) else [['Energy','Photoemission\\+(1/2)'],['eV','a.u.']]
         x,y=[i.energy for i in data],[i.APSdata-i.baseline if 
                                       hasattr(i,'baseline') else i.APSdata 
@@ -408,7 +417,7 @@ class APS:
     def save_aps_fit_csv(data,location,filename='APS_linear_regression'):
         assert all(i.status['analyzed'] for i in data), 'Input not yet analyzed'
         origin_header=[['Energy','Photoemission\\+(1/3)'],['eV','a.u.']] if all([i.status['sqrt']==False for i in data]) else [['Energy','Photoemission\\+(1/2)'],['eV','a.u.']]
-        datanames=[i.name for i in data]
+        datanames=[[i.name] for i in data]
         x=[np.array([i.homo,i.energy[i.lin_stop_index]]) for i in data]
         y=[np.array([0,np.polyval(i.lin_par,i.energy[i.lin_stop_index])]) for i in data]
         save_csv_for_origin((x,y),location,filename,datanames,origin_header)
@@ -417,7 +426,7 @@ class APS:
     def save_homo_error_csv(data,location,filename='APS_HOMO'):
         assert all(i.status['analyzed'] for i in data), 'Input not yet analyze'
         origin_header=[['Material','Energy','HOMO std'],[None,'eV','eV']]
-        datanames=['HOMO']
+        datanames=[['HOMO']]
         x=[[i.name for i in data]]
         y=[[-i.homo for i in data]]
         z=[[i.std_homo*i.homo for i in data]]
@@ -427,7 +436,7 @@ class APS:
     def save_DOS_csv(data,location,filename='DOS'):
         assert all(i.status['DOS_analyzed'] for i in data), 'Input not yet DOS_analyzed'
         origin_header=[['Energy','DOS'],['eV','a.u.']]
-        datanames=[i.name for i in data]
+        datanames=[[i.name] for i in data]
         x,y=[i.energy for i in data],[i.DOS for i in data]
         save_csv_for_origin((x,y),location,filename,datanames,origin_header)
         
@@ -503,7 +512,7 @@ class dwf:
         data=[]
         save_index=[-3,2]
         for file in filenames:
-            with open(file,newline='') as f:
+            with open(file,'r',newline='') as f:
                 reader=csv.reader(f)
                 for i,j in enumerate(reader):
                     if len(j)==1:
@@ -522,7 +531,7 @@ class dwf:
     def save_csv(data,location,filename='DWF'):
         assert all([data[i].__class__==data[i+1].__class__ for i in range(len(data)-1)]), 'Data are not the same class objects'
         origin_header=[['Time',data[0].data_type],['s',data[0].data_unit]]
-        datanames=[i.name for i in data]
+        datanames=[[i.name] for i in data]
         x=[i.time for i in data]
         y=[i.CPDdata for i in data]
         save_csv_for_origin((x,y),location,filename,datanames,origin_header)
@@ -534,7 +543,7 @@ class dwf:
             print('Use last 200sec data for statistic analysis')
             _=[i.dwf_stat() for i in data]
         origin_header=[['Material','Energy',data[0].data_type+' std'],[None,data[0].data_unit,data[0].data_unit]]  
-        datanames=[data[0].data_type]
+        datanames=[[data[0].data_type]]
         x=[[i.name for i in data]]
         y=[[i.average_CPD for i in data]]
         z=[[i.std_CPD for i in data]]
@@ -639,7 +648,7 @@ class spv(dwf):
             print('Use first light on for normalization')
             _=[i.normalize() for i in data]
         origin_header=[['Time','Normalized SPV'],['s','a.u.']]
-        datanames=[i.name for i in data]
+        datanames=[[i.name] for i in data]
         x=[i.time for i in data]
         y=[i.norm_spv for i in data]
         save_csv_for_origin((x,y),location,filename,datanames,origin_header)
