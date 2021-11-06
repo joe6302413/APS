@@ -193,9 +193,9 @@ class APS:
         plt.legend()
         plt.xlabel('Energy (eV)')
         if self.status['sqrt']==False:
-            plt.ylabel('Photoemission^(1/3)  (a.u.)')
+            plt.ylabel('Photoemission$^{1/3}$  (a.u.)')
         else:
-            plt.ylabel('Photoemission^(1/2)  (a.u.)')
+            plt.ylabel('Photoemission$^{1/2}$  (a.u.)')
         plt.autoscale(enable=True,axis='both',tight=True)
         plt.gca().set_ylim(bottom=-0.5)
             
