@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 Created on Tue Sep 29 2020
 
@@ -28,16 +27,16 @@ import matplotlib.pyplot as plt, tkinter as tk, tkinter.filedialog
 from os.path import normpath,split
 from os import getenv
 from apsmodule import APS
-onedrive=getenv('OneDrive')
-APSdir=normpath(onedrive+'\\Data\\APS')
+APSdir=normpath(getenv('OneDrive')+'\\Data\\APS') if getenv('OneDrive')!=None \
+    else ''
 
 #%% clean filenames
 filenames=[]
 
 #%% choose files
 root=tk.Tk()
-root.withdraw()
-root.iconify()
+# root.withdraw()
+# root.iconify()
 # root.call('wm', 'attributes', '.', '-topmost', True)
 filenames+=tk.filedialog.askopenfilenames(parent=root,initialdir=APSdir, title='Please select APS files',filetypes=[('DAT','.DAT')])
 root.destroy()
@@ -63,7 +62,7 @@ APS.save_aps_fit_csv(data,location)
 APS.save_homo_error_csv(data,location)
 
 #%% smoothing DOS
-_=[i.DOSsmooth(7,3,plot=True) for i in data]
+_=[i.DOSsmooth(7,3,scale=10,plot=True) for i in data]
 
 #%% overlay all the DOS
 plt.figure('DOS')
