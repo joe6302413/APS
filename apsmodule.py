@@ -26,8 +26,9 @@ from scipy.optimize import curve_fit, shgo
 from scipy import integrate
 from os.path import split,join
 from scipy.signal import savgol_filter
+from scipy.special import erf
 
-__version__='1.1'
+__version__='1.1.1'
 
 def save_csv_for_origin(data,location,filename=None,datanames=None,header=None):
     '''
@@ -46,7 +47,7 @@ def save_csv_for_origin(data,location,filename=None,datanames=None,header=None):
     maxlength=max(len(i) for i in data)
     data=np.transpose([np.append(i,['']*(maxlength-len(i))) for i in data])
     if datanames==None:
-        datanames=[['data'+str(i) for i in range(numberofdata) for j in range(data_dim)]]
+        datanames=[[f'data{i}' for i in range(numberofdata) for j in range(data_dim)]]
     else:
         datanames=[[j for i in datanames for j in (['']+i+['']*(data_dim-1-len(i)))]]
     if header==None:
@@ -85,8 +86,7 @@ def inv_gradient(x,g,y0=0):
     '''
     length=len(g)
     if length!=len(x):
-        raise Exception('length of x and gradient should '+
-                        'have match length')
+        raise Exception('length of x and gradient should have match length')
     xdiff=np.diff(x)
     xdiff2=xdiff[:-1]+xdiff[1:]
     y=np.array([y0,g[0]*xdiff[0]+y0])
@@ -101,21 +101,31 @@ class APS:
     def __init__(self,energy,APSdata,sqrt=False,Name='no_name'):
         self.energy=np.array(energy)
         self.APSdata=np.array(APSdata)
-        self.DOS=np.gradient(APSdata,energy)
         self.name=Name
-        self.status={'sqrt': bool(sqrt),'baseline':False,
-                     'cutoff': False,'analyzed':False, 'DOS_analyzed': True,
-                     'DOS smoothed': False}
-        
+        self._DOS=self.DOS_raw
+        self._status={'sqrt': bool(sqrt),'baseline':False,
+                     'cutoff': False,'analyzed':False, 'DOS smoothed': False}
+    
+    @property
+    def status(self):
+        return self._status
+    
+    @property
+    def DOS_raw(self):
+        return np.gradient(self.APSdata,self.energy)
+    
+    @property
+    def DOS(self):
+        return self._DOS
+    
     def __repr__(self):
         return self.name
     
     def __str__(self):
-        summary='Name:\t'+self.name+'\n'
-        summary+='\n'.join([i+':\t'+str(j) for i,j in self.status.items()])+'\n'
+        summary=f'Name:\t{self.name}\n'
+        summary+='\n'.join([f'{i}:\t{j}' for i,j in self.status.items()])+'\n'
         if self.status['analyzed']==True:
-            summary+='HOMO(eV):\t%1.2f\u00b1%1.2feV\n'%(
-                self.homo,self.homo*self.std_homo)
+            summary+=f'HOMO(eV):\t{self.homo:.2f}\u00b1{self.homo*self.std_homo:.2f}eV\n'
         return summary
                
     def pick_range(self):
@@ -144,15 +154,19 @@ class APS:
         if self.status['analyzed']!=hasattr(self,'homo'):
             report+='Analaysis is corrupted!\nRedo self.analyze('\
                 'fit_lower_bound,fit_upper_bound)\n'
-
-        if self.status['DOS smoothed']!=hasattr(self,'original_DOS'):
-            report+='DOS smmoothing is corrupted!\nRedo self.DOSsmooth('\
-                'pts,power)\n'
-        if report=='':
-            print(self.name+'\n--------\nCheck done and all statuses are '\
-                  'good!\n')
+        if self.status['DOS smoothed']:
+            if all(self.DOS==self.DOS_raw):
+                report+='DOS smmoothing is corrupted!\nRedo self.DOSsmooth('\
+                    'pts,power,scale=)\n'
         else:
-            print(self.name+'\n--------\n'+report)
+            if any(self.DOS!=self.DOS_raw):
+                self._DOS=self.DOS_raw
+                report+='DOS seems smoothed but not recorded!\nDOS reseted\n'
+        if report=='':
+            print(f'{self.name}\n--------\nCheck done and all statuses are '\
+                  'good!')
+        else:
+            print(f'{self.name}\n--------\n{report}')
         
     # def read_gaussian_MO(self,MOenergy):
     #     self.MOenergy=MOenergy
@@ -169,7 +183,7 @@ class APS:
     def find_cutoff(self):
         if not hasattr(self,'baseline'):
             self.find_baseline(plot=False)
-            print('Automatic find baseline between (1,5) for '+self.name)
+            print(f'Automatic find baseline between (1,5) for {self.name}')
         index=next(len(self.APSdata)-i for i,j in enumerate(self.APSdata[::-1]
                                                  -self.baseline) if j<0)
         self.cutoff_index,self.cutoff_energy=index,self.energy[index]
@@ -189,7 +203,8 @@ class APS:
                          self.lin_stop_index])],'--',c=fig[0]._color)
         if hasattr(self,'fit_par') and hasattr(self,'APSfit'):
             plt.plot(self.energy,self.APSfit,label=
-                     'fit: c=%1.4f, shift=%1.4f, scale=%2.1f' %tuple(self.fit_par))
+                     f'fit: c={self.fit_par[0]:.4f}, shift={self.fit_par[1]:.4f}'\
+                         f', scale={self.fit_par[2]:.1f}')
         plt.legend()
         plt.xlabel('Energy (eV)')
         if self.status['sqrt']==False:
@@ -199,28 +214,21 @@ class APS:
         plt.autoscale(enable=True,axis='both',tight=True)
         plt.gca().set_ylim(bottom=-0.5)
             
-    def DOSsmooth(self,*args,plot=False,**kwargs):
-        if not hasattr(self,'DOS'):
-            raise Exception("Calculate DOS with self.DOS_analyze()")
-        if hasattr(self,'DOS_original'):
-            self.DOS=self.DOS_original
-        else:
-            self.DOS_original=self.DOS
+    def DOSsmooth(self,*args,scale=10,plot=False,**kwargs):
         if not hasattr(self,'cutoff_energy'):
             self.find_cutoff()
-        self.DOS=savgol_filter(self.DOS,*args,**kwargs)
+        self._DOS=savgol_filter(self.DOS_raw,*args,**kwargs)
+        self._DOS*=self.erfsmooth(self.energy,scale,self.cutoff_energy)
         self.status['DOS smoothed']=True
         if plot:
             plt.figure()
-            index=self.cutoff_index-5
-            _=plt.plot(self.energy[index:],self.DOS_original[index:],'o-',
-                       label='no smooth',mfc='none')
             self.DOSplot()
+            index=self.cutoff_index-5
+            _=plt.plot(self.energy[index:],self.DOS_raw[index:],'o-',
+                       label='no smooth',mfc='none')
             plt.legend()
         
     def DOSplot(self):
-        if not hasattr(self,'DOS'):
-            raise Exception("Calculate DOS with self.DOS_analyze()")
         plt.grid(True,which='both',axis='x')
         if not hasattr(self,'cutoff_energy'):
             self.find_cutoff()
@@ -241,7 +249,7 @@ class APS:
         else: gap=10
         if not hasattr(self, 'baseline'):
             self.find_baseline(plot=False)
-            print('Automatic find baseline between (1,5) for '+self.name)
+            print(f'Automatic find baseline between (1,5) for {self.name}')
         start=len(self.energy)-next(i for i,j in enumerate(
             self.APSdata[::-1]-self.baseline) if j<fit_lower_bound)-1
         stop=len(self.energy)-next(i for i,j in enumerate(
@@ -266,8 +274,8 @@ class APS:
             ax=fig.gca()
             self.plot()
             plt.title(self.name)
-            plt.text(.5, .95, 'HOMO=%1.2f\u00b1 %0.3f%%' 
-                     %(self.homo,100*self.std_homo), style='italic',
+            plt.text(.5, .95, f'HOMO={self.homo:.2f}\u00b1 {self.std_homo*100:.3f}%' 
+                     , style='italic',
                      bbox={'facecolor': 'yellow', 'alpha': 0.5},
                      horizontalalignment='center',verticalalignment='center',
                      transform=ax.transAxes)
@@ -276,8 +284,6 @@ class APS:
             print(self.name+' is using the minimum number of points\t')
     
     def DOSfit(self,p0):
-        # if not hasattr(self,'DOS'):
-        #     raise Exception("Calculate DOS with self.DOS_analyze()")
         minindex,maxindex=self.pick_range()
         fit,_=curve_fit(lambda x,scale,c,center: scale*APS.gaussian(x,c,center),self.energy[minindex:maxindex],self.DOS[minindex:maxindex],p0)
         plt.figure()
@@ -434,7 +440,6 @@ class APS:
         
     @staticmethod
     def save_DOS_csv(data,location,filename='DOS'):
-        assert all(i.status['DOS_analyzed'] for i in data), 'Input not yet DOS_analyzed'
         origin_header=[['Energy','DOS'],['eV','a.u.']]
         datanames=[[i.name] for i in data]
         x,y=[i.energy for i in data],[i.DOS for i in data]
@@ -451,6 +456,10 @@ class APS:
     @staticmethod
     def apsfun(x,c,scale,MOenergy):
         return np.cumsum([scale*integrate.quad(APS.mofun,x[i-1],x[i],args=(c,MOenergy))[0] if i!=0 else 0 for i in range(len(x))])
+    
+    @staticmethod
+    def erfsmooth(x,c,shift):
+        return erf((x-shift)*c)/2+0.5
     
 class dwf:
     allowed_kwargs=[]
@@ -471,11 +480,10 @@ class dwf:
     
     def __str__(self):
         summary='Name:\t'+self.name+'\n'
-        summary+='\n'.join([i+':\t'+str(j) for i,j in self.status.items()])+'\n'
+        summary+='\n'.join([f'{i}:\t{j}' for i,j in self.status.items()])+'\n'
         if self.status['statistics']==True:
-            summary+='Statistic region:\tlast '+str(self.length)+\
-                's\naverage:\t%1.2f\u00b1%0.2feV\n'%(self.average_CPD
-                                                     ,self.std_CPD)
+            summary+=f'Statistic region:\tlast {self.length}'\
+                f's\naverage:\t{self.average_CPD:.2f}\u00b1{self.std_CPD:.2f}eV\n'
         return summary
     
     def status_check(self):
@@ -486,10 +494,10 @@ class dwf:
             report+='Statistic is corrupted!\nRedo self.dwf_stat('\
                 'length)\n'
         if report=='':
-            print(self.name+'\n--------\nCheck done and all statuses are '\
+            print(f'{self.name}\n--------\nCheck done and all statuses are '\
                   'good!\n')
         else:
-            print(self.name+'\n--------\n'+report)
+            print(f'{self.name}\n--------\n{report}')
             
     def plot(self):
         plt.grid(True,which='both',axis='both')

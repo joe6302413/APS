@@ -23,16 +23,16 @@ import matplotlib.pyplot as plt, tkinter as tk, tkinter.filedialog
 from os.path import normpath,split
 from os import getenv
 from apsmodule import spv
-onedrive=getenv('OneDrive')
-APSdir=normpath(onedrive+'\\Data\\APS')
+APSdir=normpath(getenv('OneDrive')+'\\Data\\APS') if getenv('OneDrive')!=None \
+    else ''
 
 #%% Clean filenames
 filenames=[]
 
 #%% Choose files
 root=tk.Tk()
-root.withdraw()
-root.iconify()
+# root.withdraw()
+# root.iconify()
 # root.call('wm', 'attributes', '.', '-topmost', True)
 filenames+=tk.filedialog.askopenfilenames(parent=root,initialdir=APSdir, title='Please select SPV files',filetypes=[('DAT','.DAT')])
 root.destroy()
