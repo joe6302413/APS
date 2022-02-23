@@ -62,7 +62,7 @@ APS.save_aps_fit_csv(data,location)
 APS.save_homo_error_csv(data,location)
 
 #%% smoothing DOS
-_=[i.DOSsmooth(7,3,scale=10,plot=True) for i in data]
+_=[i.DOSsmooth(7,3,scale=3,y_scale=0.2,plot=True) for i in data]
 
 #%% overlay all the DOS
 plt.figure('DOS')

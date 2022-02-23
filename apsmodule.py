@@ -28,7 +28,7 @@ from os.path import split,join
 from scipy.signal import savgol_filter
 from scipy.special import erf
 
-__version__='1.1.1'
+__version__='1.1.2'
 
 def save_csv_for_origin(data,location,filename=None,datanames=None,header=None):
     '''
@@ -214,11 +214,11 @@ class APS:
         plt.autoscale(enable=True,axis='both',tight=True)
         plt.gca().set_ylim(bottom=-0.5)
             
-    def DOSsmooth(self,*args,scale=10,plot=False,**kwargs):
+    def DOSsmooth(self,*args,scale=4,y_scale=0.2,plot=False,**kwargs):
         if not hasattr(self,'cutoff_energy'):
             self.find_cutoff()
         self._DOS=savgol_filter(self.DOS_raw,*args,**kwargs)
-        self._DOS*=self.erfsmooth(self.energy,scale,self.cutoff_energy)
+        self._DOS*=self.erfsmooth(self.energy,scale,self.cutoff_energy,y_scale)
         self.status['DOS smoothed']=True
         if plot:
             plt.figure()
@@ -458,8 +458,11 @@ class APS:
         return np.cumsum([scale*integrate.quad(APS.mofun,x[i-1],x[i],args=(c,MOenergy))[0] if i!=0 else 0 for i in range(len(x))])
     
     @staticmethod
-    def erfsmooth(x,c,shift):
-        return erf((x-shift)*c)/2+0.5
+    def erfsmooth(x:np.array,scale:float,cutoff:float,y_scale:float)->np.array:
+        if y_scale<0:
+            raise ValueError('y_scale must be larger than 0.')
+        y_scale+=2
+        return erf((x-cutoff)*scale)/y_scale+(y_scale-1)/y_scale
     
 class dwf:
     allowed_kwargs=[]
