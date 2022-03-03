@@ -23,7 +23,7 @@ Last editing time: 12/11/2020
 @author: Yi-Chun Chin    joe6302413@gmail.com
 """
 #%% packages and libraries
-import matplotlib.pyplot as plt, tkinter as tk, tkinter.filedialog
+import matplotlib.pyplot as plt, tkinter as tk
 from os.path import normpath,split
 from os import getenv
 from apsmodule import APS
@@ -49,7 +49,7 @@ data+=APS.import_from_files(filenames,sqrt=False,trunc=-8)
 #%% analyze data
 plt.close('all')
 for i in data:
-    i.analyze(0)
+    i.analyze(0,15)
     
 #%% overlay all the data
 fig=plt.figure('APS overlay')
@@ -62,7 +62,7 @@ APS.save_aps_fit_csv(data,location)
 APS.save_homo_error_csv(data,location)
 
 #%% smoothing DOS
-_=[i.DOSsmooth(7,3,scale=3,y_scale=0.2,plot=True) for i in data]
+_=[i.DOSsmooth(7,3,scale=4,y_scale=0.2,plot=False) for i in data]
 
 #%% overlay all the DOS
 plt.figure('DOS')

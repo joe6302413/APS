@@ -98,9 +98,9 @@ def inv_gradient(x,g,y0=0):
     return y
 
 class APS:
-    def __init__(self,energy,APSdata,sqrt=False,Name='no_name'):
+    def __init__(self,energy,pes,sqrt=False,Name='no_name'):
         self.energy=np.array(energy)
-        self.APSdata=np.array(APSdata)
+        self._pes=np.array(pes)
         self.name=Name
         self._DOS=self.DOS_raw
         self._status={'sqrt': bool(sqrt),'baseline':False,
@@ -111,13 +111,47 @@ class APS:
         return self._status
     
     @property
+    def pes(self):
+        return self._pes
+    
+    @property
+    def pes_base(self):
+        return self._pes-self.baseline
+        
+    @property
     def DOS_raw(self):
-        return np.gradient(self.APSdata,self.energy)
+        return np.gradient(self.pes,self.energy)
     
     @property
     def DOS(self):
         return self._DOS
     
+    @property
+    def cutoff_energy(self):
+        try:
+            return self._cutoff_energy
+        except AttributeError:
+            print('')
+            self.find_cutoff()
+            return self._cutoff_energy
+        
+    @property
+    def cutoff_index(self):
+        try:
+            return self._cutoff_index
+        except AttributeError:
+            self.find_cutoff()
+            return self._cutoff_index
+    
+    @property
+    def baseline(self):
+        try:
+            return self._baseline
+        except AttributeError:
+            print(f'Automatic find baseline between (1,5) for {self.name}')
+            self.find_baseline(plot=False)
+            return self._baseline
+        
     def __repr__(self):
         return self.name
     
@@ -142,14 +176,14 @@ class APS:
     
     def status_check(self):
         report=''
-        if hasattr(self,'baseline'):
+        if hasattr(self,'_baseline'):
             if not self.status['baseline']==float(self.baseline):
                 report+='Baseline is corrupted!\nRedo self.find_baseline'\
                     '(baseline_bounds) and self.find_cutoff()\n'
         elif self.status['baseline']:
             report+='Baseline is corrupted!\nRedo self.find_baseline'\
                     '(baseline_bounds) and self.find_cutoff()\n'
-        if self.status['cutoff']!=hasattr(self,'cutoff_index'):
+        if self.status['cutoff']!=hasattr(self,'_cutoff_index'):
             report+='Cutoff is corrupted!\nRedo self.find_cutoff()\n'
         if self.status['analyzed']!=hasattr(self,'homo'):
             report+='Analaysis is corrupted!\nRedo self.analyze('\
@@ -172,30 +206,26 @@ class APS:
     #     self.MOenergy=MOenergy
         
     def find_baseline(self,baseline_bounds=(1,5),plot=True):
-        baseline_res=shgo(lambda x: -APS.mofun(x,0.3,self.APSdata),
+        baseline_res=shgo(lambda x: -APS.mofun(x,0.3,self.pes),
                           [baseline_bounds],iters=2)
-        self.baseline=baseline_res.x
+        self._baseline=baseline_res.x
         self.status['baseline']=float(self.baseline)
         if plot==True:
             plt.figure()
             self.plot()
 
     def find_cutoff(self):
-        if not hasattr(self,'baseline'):
-            self.find_baseline(plot=False)
-            print(f'Automatic find baseline between (1,5) for {self.name}')
-        index=next(len(self.APSdata)-i for i,j in enumerate(self.APSdata[::-1]
-                                                 -self.baseline) if j<0)
-        self.cutoff_index,self.cutoff_energy=index,self.energy[index]
+        index=next(len(self.pes_base)-i for i,j in enumerate(self.pes_base
+                                                             [::-1]) if j<0)
+        self._cutoff_index,self._cutoff_energy=index,self.energy[index]
         self.status['cutoff']=True
         
     def plot(self):
         plt.grid(True,which='both',axis='x')
-        if hasattr(self,'baseline'):
-            fig=plt.plot(self.energy,self.APSdata-self.baseline,
-                         label=self.name)
+        if hasattr(self,'_baseline'):
+            fig=plt.plot(self.energy,self.pes_base,label=self.name)
         else:
-            fig=plt.plot(self.energy,self.APSdata,label=self.name)
+            fig=plt.plot(self.energy,self.pes,label=self.name)
         plt.axhline(y=0, color='k',ls='--')
         if hasattr(self,'lin_par'):
             plt.plot([self.homo,self.energy[self.lin_stop_index]],
@@ -215,8 +245,6 @@ class APS:
         plt.gca().set_ylim(bottom=-0.5)
             
     def DOSsmooth(self,*args,scale=4,y_scale=0.2,plot=False,**kwargs):
-        if not hasattr(self,'cutoff_energy'):
-            self.find_cutoff()
         self._DOS=savgol_filter(self.DOS_raw,*args,**kwargs)
         self._DOS*=self.erfsmooth(self.energy,scale,self.cutoff_energy,y_scale)
         self.status['DOS smoothed']=True
@@ -230,8 +258,6 @@ class APS:
         
     def DOSplot(self):
         plt.grid(True,which='both',axis='x')
-        if not hasattr(self,'cutoff_energy'):
-            self.find_cutoff()
         index=self.cutoff_index-5
         _=plt.plot(self.energy[index:],self.DOS[index:],'*-',label=self.name,
                    mfc='none')
@@ -247,18 +273,15 @@ class APS:
         if smoothness==1:   gap=5
         elif smoothness==2: gap=7
         else: gap=10
-        if not hasattr(self, 'baseline'):
-            self.find_baseline(plot=False)
-            print(f'Automatic find baseline between (1,5) for {self.name}')
         start=len(self.energy)-next(i for i,j in enumerate(
-            self.APSdata[::-1]-self.baseline) if j<fit_lower_bound)-1
+            self.pes_base[::-1]) if j<fit_lower_bound)-1
         stop=len(self.energy)-next(i for i,j in enumerate(
-            self.APSdata[::-1]-self.baseline) if j<fit_upper_bound)
+            self.pes_base[::-1]) if j<fit_upper_bound)
         self.std_homo=np.inf
         for i,j in [[i,j] for i in range(start,stop) 
                     for j in range(i+gap,stop)]:
             [slope,intercept],[[var_slope,_],[_,var_intercept]]=np.polyfit(
-                self.energy[i:j],self.APSdata[i:j]-self.baseline,1,cov=True)
+                self.energy[i:j],self.pes_base[i:j],1,cov=True)
             std_homo=np.sqrt(var_slope/slope**2+var_intercept/intercept**2)
             if std_homo<self.std_homo:
                 self.lin_start_index,self.lin_stop_index=i,j
@@ -291,9 +314,6 @@ class APS:
         self.DOSplot()
 
     def MOfit(self,p0=[2,0.12,0.2],bounds=([0.01,0.1,-0.5],[1e2,0.3,0.5]),repick=True):
-        # if self.status['baseline']==False:
-        #     self.find_baseline()
-        #     print('Automatic find baseline between (1,5) for '+self.name)
         self.p0=p0
         self.bounds=bounds
         if repick:
@@ -352,10 +372,9 @@ class APS:
     
     @classmethod
     def APS_from_DOS(cls,energy,DOS,sqrt,Name='no_name'):
-        APSdata=inv_gradient(energy,DOS)
-        APS_obj=cls(energy,APSdata,sqrt,Name)
-        APS_obj.find_baseline(plot=False)
-        APS_obj.APSdata-=APS_obj.baseline
+        pes=inv_gradient(energy,DOS)
+        APS_obj=cls(energy,pes,sqrt,Name)
+        APS_obj.find_baseline((-1,1),plot=False)
         return APS_obj
 
     @staticmethod
@@ -386,8 +405,6 @@ class APS:
         Linear combine multiple DOS from source to fit the DOS of target.
         source is a list of APS objects [APS1,APS2,...] to fit APS obj target.
         '''
-        if any([not hasattr(i,'cutoff_index') for i in [*source,target]]):
-            _=[i.find_cutoff() for i in [*source,target]]
         cutoff_energy=[i.cutoff_energy for i in source]
         index=cutoff_energy.index(min(cutoff_energy))
         energy=[j.energy if i!=index else j.energy[j.cutoff_index:] for i,j
@@ -414,8 +431,8 @@ class APS:
     def save_aps_csv(data,location,filename='APS'):
         datanames=[[i.name] for i in data]
         origin_header=[['Energy','Photoemission\\+(1/3)'],['eV','a.u.']] if all([i.status['sqrt']==False for i in data]) else [['Energy','Photoemission\\+(1/2)'],['eV','a.u.']]
-        x,y=[i.energy for i in data],[i.APSdata-i.baseline if 
-                                      hasattr(i,'baseline') else i.APSdata 
+        x,y=[i.energy for i in data],[i.pes_baseline if 
+                                      hasattr(i,'_baseline') else i.pes 
                                       for i in data]
         save_csv_for_origin((x,y),location,filename,datanames,origin_header)
 
