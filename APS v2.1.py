@@ -19,11 +19,10 @@ Note:
     To change the truncation length just use APS.save_aps_(fit_)csv(data,location,trunc=-n) for n word truncation.
     Again for my personall usage, the default folder direction is to my onedrive APS folder.
 
-Last editing time: 12/11/2020
 @author: Yi-Chun Chin    joe6302413@gmail.com
 """
 #%% packages and libraries
-import matplotlib.pyplot as plt, tkinter as tk
+import matplotlib.pyplot as plt, tkinter as tk, tkinter.filedialog
 from os.path import normpath,split
 from os import getenv
 from apsmodule import APS
@@ -38,7 +37,9 @@ root=tk.Tk()
 # root.withdraw()
 # root.iconify()
 # root.call('wm', 'attributes', '.', '-topmost', True)
-filenames+=tk.filedialog.askopenfilenames(parent=root,initialdir=APSdir, title='Please select APS files',filetypes=[('DAT','.DAT')])
+filenames+=tk.filedialog.askopenfilenames(parent=root,initialdir=APSdir, 
+                                          title='Please select APS files',
+                                          filetypes=[('DAT','.DAT')])
 root.destroy()
 
 #%% load files into data
@@ -49,7 +50,7 @@ data+=APS.import_from_files(filenames,sqrt=False,trunc=-8)
 #%% analyze data
 plt.close('all')
 for i in data:
-    i.analyze(0,15)
+    i.analyze(0,99)
     
 #%% overlay all the data
 fig=plt.figure('APS overlay')
@@ -62,7 +63,7 @@ APS.save_aps_fit_csv(data,location)
 APS.save_homo_error_csv(data,location)
 
 #%% smoothing DOS
-_=[i.DOSsmooth(7,3,scale=4,y_scale=0.2,plot=False) for i in data]
+_=[i.DOSsmooth(7,3,plot=False) for i in data]
 
 #%% overlay all the DOS
 plt.figure('DOS')
@@ -70,4 +71,4 @@ for i in data: i.DOSplot()
 
 #%% Saving DOS into csv
 location=split(filenames[0])[0]
-APS.save_DOS_csv(data,location)
+APS.save_DOS_csv(data,location,filename='DOS')

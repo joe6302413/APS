@@ -24,13 +24,18 @@ import matplotlib.pyplot as plt, csv
 import numpy as np
 from scipy.optimize import curve_fit, shgo
 from scipy import integrate
-from os.path import split,join
+from os.path import split,join,exists
 from scipy.signal import savgol_filter
 from scipy.special import erf
+from typing import List,Tuple
+import tkinter as tk
+from tkinter.filedialog import asksaveasfilename
 
 __version__='1.1.2'
 
-def save_csv_for_origin(data,location,filename=None,datanames=None,header=None):
+def save_csv_for_origin(data:Tuple[List[List[float]]],location:str,
+                        filename:str=None,datanames:List[List[str]]=None,
+                        header:List[List[str]]=None) -> None: 
     '''
     save data sets to csv format for origin.
     data=([x1,x2,...],[y1,y2,...],...) where each element is a list of array
@@ -39,6 +44,17 @@ def save_csv_for_origin(data,location,filename=None,datanames=None,header=None):
     datanames=[[yname1,zname1,...],[yname2,zname2]] names should be for each individual data sets
     header=[[longname X, longname Y,...],[unit X, unit Y,...]]
     '''
+    path_name=join(location,str(filename)+'.csv')
+    if exists(path_name):
+        root=tk.Tk()
+        filename=asksaveasfilename(title=f'rename save file name for {filename}',
+                                   initialdir=location,filetypes=[('csv','.csv')],
+                                   defaultextension='.csv',initialfile=filename)
+        if filename=='':
+            raise Exception('saving process cancelled due to overwriting.')
+        path_name=join(location,str(filename))
+        root.destroy()
+        
     data_dim=len(data)
     assert [len(i) for i in data][1:]==[len(i) for i in data][:-1], 'number of data mismatch'
     assert len(header[0])==data_dim, 'header mismatch data dimension'
@@ -54,7 +70,7 @@ def save_csv_for_origin(data,location,filename=None,datanames=None,header=None):
         header=datanames+[['']*numberofdata*data_dim]
     else:
         header=[i*numberofdata for i in header]
-    with open(join(location,str(filename)+'.csv'),'w',newline='') as f:
+    with open(path_name,'w',newline='') as f:
         writer=csv.writer(f)
         writer.writerows(header)
         writer.writerows(datanames)
@@ -98,9 +114,9 @@ def inv_gradient(x,g,y0=0):
     return y
 
 class APS:
-    def __init__(self,energy,pes,sqrt=False,Name='no_name'):
+    def __init__(self,energy,pes_raw,sqrt=False,Name='no_name'):
         self.energy=np.array(energy)
-        self._pes=np.array(pes)
+        self._pes_raw=np.array(pes_raw)
         self.name=Name
         self._DOS=self.DOS_raw
         self._status={'sqrt': bool(sqrt),'baseline':False,
@@ -111,12 +127,30 @@ class APS:
         return self._status
     
     @property
+    def pes_raw(self):
+        '''
+        Calling for the original input pes.
+        '''
+        return self._pes_raw
+    
+    @property
     def pes(self):
-        return self._pes
+        '''
+        Calling the pes-baseline if possible. Otherwise, return pes_raw
+        
+        '''
+        try:
+            return self.pes_raw-self._baseline
+        except AttributeError:
+            return self.pes_raw
     
     @property
     def pes_base(self):
-        return self._pes-self.baseline
+        '''
+        Calling for pes-baseline. It will do automatic baseline fitting if 
+        baseline doesn't exit.
+        '''
+        return self.pes_raw-self.baseline
         
     @property
     def DOS_raw(self):
@@ -131,7 +165,7 @@ class APS:
         try:
             return self._cutoff_energy
         except AttributeError:
-            print('')
+            print(f'Automatic find cutoff for {self.name}')
             self.find_cutoff()
             return self._cutoff_energy
         
@@ -140,6 +174,7 @@ class APS:
         try:
             return self._cutoff_index
         except AttributeError:
+            print(f'Automatic find cutoff for {self.name}')
             self.find_cutoff()
             return self._cutoff_index
     
@@ -206,8 +241,11 @@ class APS:
     #     self.MOenergy=MOenergy
         
     def find_baseline(self,baseline_bounds=(1,5),plot=True):
-        baseline_res=shgo(lambda x: -APS.mofun(x,0.3,self.pes),
+        baseline_res=shgo(lambda x: -APS.mofun(x,0.3,self.pes_raw),
                           [baseline_bounds],iters=2)
+        if baseline_res.x in baseline_bounds:
+            raise ValueError(f'Found baseline is on the boundary ({baseline_res.x[0]}). '\
+                             'Please rerun with better baseline_bounds.')
         self._baseline=baseline_res.x
         self.status['baseline']=float(self.baseline)
         if plot==True:
@@ -215,17 +253,18 @@ class APS:
             self.plot()
 
     def find_cutoff(self):
-        index=next(len(self.pes_base)-i for i,j in enumerate(self.pes_base
-                                                             [::-1]) if j<0)
+        try:
+            index=next(len(self.pes_base)-i for i,j in enumerate(self.pes_base
+                                                                 [::-1]) if j<0)
+        except:
+            raise ValueError('Baseline was not correct. Please redo '\
+                             'find_baseline.')
         self._cutoff_index,self._cutoff_energy=index,self.energy[index]
         self.status['cutoff']=True
         
     def plot(self):
         plt.grid(True,which='both',axis='x')
-        if hasattr(self,'_baseline'):
-            fig=plt.plot(self.energy,self.pes_base,label=self.name)
-        else:
-            fig=plt.plot(self.energy,self.pes,label=self.name)
+        fig=plt.plot(self.energy,self.pes,label=self.name)
         plt.axhline(y=0, color='k',ls='--')
         if hasattr(self,'lin_par'):
             plt.plot([self.homo,self.energy[self.lin_stop_index]],
@@ -244,22 +283,24 @@ class APS:
         plt.autoscale(enable=True,axis='both',tight=True)
         plt.gca().set_ylim(bottom=-0.5)
             
-    def DOSsmooth(self,*args,scale=4,y_scale=0.2,plot=False,**kwargs):
+    def DOSsmooth(self,*args,scale=4.122623,y0=0.1,plot=False,**kwargs):
+        shift=0.053547 #this value is derived from empirical measurements
         self._DOS=savgol_filter(self.DOS_raw,*args,**kwargs)
-        self._DOS*=self.erfsmooth(self.energy,scale,self.cutoff_energy,y_scale)
+        cutoff=self.cutoff_energy+shift
+        self._DOS*=self.erfsmooth(self.energy,scale,cutoff,y0)
         self.status['DOS smoothed']=True
         if plot:
             plt.figure()
             self.DOSplot()
-            index=self.cutoff_index-5
-            _=plt.plot(self.energy[index:],self.DOS_raw[index:],'o-',
+            # index=self.cutoff_index-5
+            _=plt.plot(self.energy,self.DOS_raw,'o-',
                        label='no smooth',mfc='none')
             plt.legend()
         
     def DOSplot(self):
         plt.grid(True,which='both',axis='x')
-        index=self.cutoff_index-5
-        _=plt.plot(self.energy[index:],self.DOS[index:],'*-',label=self.name,
+        # index=self.cutoff_index-5
+        _=plt.plot(self.energy,self.DOS,'*-',label=self.name,
                    mfc='none')
         plt.axhline(y=0, color='k',ls='--')
         plt.autoscale(enable=True,axis='both',tight=True)
@@ -273,8 +314,13 @@ class APS:
         if smoothness==1:   gap=5
         elif smoothness==2: gap=7
         else: gap=10
-        start=len(self.energy)-next(i for i,j in enumerate(
-            self.pes_base[::-1]) if j<fit_lower_bound)-1
+        try:
+            start=len(self.energy)-next(i for i,j in enumerate(
+                self.pes_base[::-1]) if j<fit_lower_bound)-1
+        except StopIteration:
+            print('fit_lower_bound is lower than the lowest PES. Use'\
+                  f' the beginning as fit_lower_bound for {self.name}.')
+            start=0
         stop=len(self.energy)-next(i for i,j in enumerate(
             self.pes_base[::-1]) if j<fit_upper_bound)
         self.std_homo=np.inf
@@ -371,9 +417,9 @@ class APS:
         return data
     
     @classmethod
-    def APS_from_DOS(cls,energy,DOS,sqrt,Name='no_name'):
-        pes=inv_gradient(energy,DOS)
-        APS_obj=cls(energy,pes,sqrt,Name)
+    def from_DOS(cls,energy,DOS,sqrt,Name='no_name'):
+        pes_raw=inv_gradient(energy,DOS)
+        APS_obj=cls(energy,pes_raw,sqrt,Name)
         APS_obj.find_baseline((-1,1),plot=False)
         return APS_obj
 
@@ -431,9 +477,7 @@ class APS:
     def save_aps_csv(data,location,filename='APS'):
         datanames=[[i.name] for i in data]
         origin_header=[['Energy','Photoemission\\+(1/3)'],['eV','a.u.']] if all([i.status['sqrt']==False for i in data]) else [['Energy','Photoemission\\+(1/2)'],['eV','a.u.']]
-        x,y=[i.energy for i in data],[i.pes_baseline if 
-                                      hasattr(i,'_baseline') else i.pes 
-                                      for i in data]
+        x,y=[i.energy for i in data],[i.pes for i in data]
         save_csv_for_origin((x,y),location,filename,datanames,origin_header)
 
     @staticmethod
@@ -475,11 +519,10 @@ class APS:
         return np.cumsum([scale*integrate.quad(APS.mofun,x[i-1],x[i],args=(c,MOenergy))[0] if i!=0 else 0 for i in range(len(x))])
     
     @staticmethod
-    def erfsmooth(x:np.array,scale:float,cutoff:float,y_scale:float)->np.array:
-        if y_scale<0:
+    def erfsmooth(x:np.array,scale:float,cutoff:float,y0:float)->np.array:
+        if y0<0:
             raise ValueError('y_scale must be larger than 0.')
-        y_scale+=2
-        return erf((x-cutoff)*scale)/y_scale+(y_scale-1)/y_scale
+        return erf((x-cutoff)*scale)*(1-y0)/2+(1+y0)/2
     
 class dwf:
     allowed_kwargs=[]
@@ -522,14 +565,17 @@ class dwf:
     def plot(self):
         plt.grid(True,which='both',axis='both')
         plt.plot(self.time,self.CPDdata,label=self.name)
-        plt.ylabel(self.data_type+' ('+self.data_unit+')')
+        plt.ylabel(f'{self.data_type} ({self.data_unit})')
         plt.legend()
         plt.xlabel('Time(s)')
         plt.autoscale(enable=True,axis='both',tight=True)
             
     def dwf_stat(self,length=200):
-        start=next(i-1 for i,j in enumerate(self.time) if 
-                   j>self.time[-1]-length)
+        try:
+            start=next(i-1 for i,j in enumerate(self.time) if 
+                       j>self.time[-1]-length)
+        except StopIteration:
+            raise ValueError('average length is larger than data length')
         self.average_CPD=np.average(self.CPDdata[start:])
         self.std_CPD=np.std(self.CPDdata[start:])
         self.length=length
@@ -591,13 +637,14 @@ class calibrate:
     def __str__(self):
         return self.name
     
-    def cal(self,data):
+    def cal(self,data:list)->List[dwf]:
         assert all([i.__class__.__name__=='dwf' for i in data]),\
             'Calibrate only applicable to CPD measurements'
         for i in data:
             i.CPDdata=-i.CPDdata/1000+self.tip_dwf
             i.data_type,i.data_unit='Fermi level','eV'
             i.status['calibrated']=True
+            i.ref_dwf=self.tip_dwf
 
 class spv(dwf):
     allowed_kwargs=['timemap']
@@ -608,7 +655,6 @@ class spv(dwf):
                              for i in self.timeline[:-1]]
         self.timeline_index.insert(0,0)
         self.timeline_index.append(len(self.time)-1)
-        # self.bg_cal=False
         self.data_type,self.data_unit='raw SPV','meV'
         self.status={'background calibrated':False, 'normalized':False}
     
