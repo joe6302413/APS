@@ -63,7 +63,7 @@ root.destroy()
 [ref_dwf]=dwf.import_from_files(ref_dwf_file)
 
 #%% Analyze ref_APS and dwf_stat ref_dwf
-ref_APS.analyze(fit_lower_bound=5,fit_upper_bound=50,smoothness=3,
+ref_APS.analyze(fit_lower_bound=5,fit_upper_bound=50,points=10,
                 plot=True)
 ref_dwf.dwf_stat(length=200)
 
