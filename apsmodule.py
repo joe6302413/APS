@@ -215,7 +215,7 @@ class APS:
         summary+='\n'.join([f'{i}:\t{j}' for i,j in self.status.items()])+'\n'
         if self._is_analyzed:
             summary+=f'HOMO(eV):\t{self.homo:.2f}\u00b1'\
-                f'{self.homo*self.std_homo:.2f}eV\n'
+                f'{self.std_homo:.4f} eV\n'
         return summary
                
     def pick_range(self):
@@ -268,9 +268,9 @@ class APS:
         plt.legend()
         plt.xlabel('Energy (eV)')
         if not self.sqrt:
-            plt.ylabel('Photoemission$^{1/3}$  (a.u.)')
+            plt.ylabel('Photoemission$^{1/3}$  (arb. unit)')
         else:
-            plt.ylabel('Photoemission$^{1/2}$  (a.u.)')
+            plt.ylabel('Photoemission$^{1/2}$  (arb.unit)')
         plt.autoscale(enable=True,axis='both',tight=True)
         plt.gca().set_ylim(bottom=-0.5)
             
@@ -280,7 +280,7 @@ class APS:
         self._DOS=self.DOS_raw*self.erfsmooth(self.energy,scale,cutoff,y0)
         self._DOS=savgol_filter(self._DOS,*args,**kwargs)
         if plot:
-            plt.figure()
+            plt.figure(f'{self.name} DOS smooth')
             self.DOSplot()
             # index=self.cutoff_index-5
             _=plt.plot(self.energy,self.DOS_raw,'o-',
@@ -297,7 +297,7 @@ class APS:
         plt.gca().set_ylim(bottom=-0.5)
         plt.legend()
         plt.xlabel('Energy (eV)')
-        plt.ylabel('DOS (a.u.)')
+        plt.ylabel('DOS (arb. unit)')
         
     def analyze(self, fit_lower_bound=0.5,fit_upper_bound=np.inf,points=7,
                 plot=True):
@@ -316,23 +316,30 @@ class APS:
         self.std_homo=np.inf
         for i,j in [[i,j] for i in range(start,stop) 
                     for j in range(i+points,stop)]:
-            [slope,intercept],[[var_slope,_],[_,var_intercept]]=np.polyfit(
-                self.energy[i:j],self.pes_base[i:j],1,cov=True)
-            std_homo=np.sqrt(var_slope/slope**2+var_intercept/intercept**2)
-            if std_homo<self.std_homo:
-                self.lin_start_index,self.lin_stop_index=i,j
-                self.lin_par,self.std_homo=(slope,intercept),std_homo
+            try:
+                p=np.polyfit(self.energy[i:j],self.pes_base[i:j],1)
+                p=np.array([p[0],-p[1]/p[0]])
+                [slope,x_intercept],[[_,_],[_,var_x_intercept]]=curve_fit(
+                    APS._line_x0,self.energy[i:j],self.pes_base[i:j],
+                    p0=p,bounds=(p-1e-3,p+1e-3))
+                std_homo=var_x_intercept**0.5
+                if std_homo<self.std_homo:
+                    self.lin_start_index,self.lin_stop_index=i,j
+                    self.lin_par,self.std_homo=(slope,-x_intercept*slope),std_homo
+                    self.homo=x_intercept
+            except RuntimeError:
+                pass
         if self.std_homo==np.inf:
             plt.figure()
-            self.plot()
+            self.plot(f"{self.name} fitting fail!!!")
             raise Exception("Fitting fail!!! Rechoose fitting condition.")
-        self.homo=-self.lin_par[1]/self.lin_par[0]
         if plot:
-            fig=plt.figure()
+            fig=plt.figure(f'{self.name} APS plot')
             ax=fig.gca()
             self.plot()
             plt.title(self.name)
-            plt.text(.5, .95, f'HOMO={self.homo:.2f}\u00b1 {self.std_homo*100:.3f}%' 
+            plt.text(.5, .95, f'HOMO={self.homo:.2f}\u00b1 '\
+                     f'{self.std_homo:.4f} eV' 
                      , style='italic',
                      bbox={'facecolor': 'yellow', 'alpha': 0.5},
                      horizontalalignment='center',verticalalignment='center',
@@ -368,7 +375,7 @@ class APS:
         MOfit=self.MOfit_par[0]*self.mofun(self.energy,self.MOfit_par[1],self.MOenergy+self.MOfit_par[-1])
         plt.plot(self.energy,MOfit,label='fit: scale=%2.1f, c=%1.4f, shift=%1.4f' %tuple(self.MOfit_par))
         plt.xlabel('Energy (eV)')
-        plt.ylabel('Photoemission^1/3 (a.u.)')
+        plt.ylabel('Photoemission^1/3 (arb. unit)')
         plt.legend()
         plt.title('FitAPS')
         print('scale=%1.4f, broaden facter=%1.4f, shift=%2.1f' %tuple(self.MOfit_par))
@@ -391,10 +398,16 @@ class APS:
                         if not float(j[3])<1e4:
                             stopindex=i
                             break
-                    except:
+                    except ValueError:
+                        pass
+                    except IndexError:
                         if j[0][:3]==' WF':
+                        # if i!=0:
                             stopindex=i
                             break
+                        else:
+                            raise ValueError(f'{file} does not have the right'\
+                                             ' format from APS04')
                 f.seek(0)
                 acceptlines=range(1,stopindex)
                 save_index=[2,6] if sqrt_type else [2,7]
@@ -473,15 +486,15 @@ class APS:
     @staticmethod
     def save_aps_csv(data,location,filename='APS'):
         datanames=[[i.name] for i in data]
-        origin_header=[['Energy','Photoemission\\+(1/3)'],['eV','a.u.']] if \
-        all([i.sqrt==False for i in data]) else [['Energy','Photoemission\\+(1/2)'],['eV','a.u.']]
+        origin_header=[['Energy','Photoemission\\+(1/3)'],['eV','arb. unit']] if \
+        all([i.sqrt==False for i in data]) else [['Energy','Photoemission\\+(1/2)'],['eV','arb. unit']]
         x,y=[i.energy for i in data],[i.pes for i in data]
         save_csv_for_origin((x,y),location,filename,datanames,origin_header)
 
     @staticmethod
     def save_aps_fit_csv(data,location,filename='APS_linear_regression'):
         assert all(i._is_analyzed for i in data), 'Input not yet analyzed'
-        origin_header=[['Energy','Photoemission\\+(1/3)'],['eV','a.u.']] if all([i.sqrt==False for i in data]) else [['Energy','Photoemission\\+(1/2)'],['eV','a.u.']]
+        origin_header=[['Energy','Photoemission\\+(1/3)'],['eV','arb. unit']] if all([i.sqrt==False for i in data]) else [['Energy','Photoemission\\+(1/2)'],['eV','arb. unit']]
         datanames=[[i.name] for i in data]
         x=[np.array([i.homo,i.energy[i.lin_stop_index]]) for i in data]
         y=[np.array([0,np.polyval(i.lin_par,i.energy[i.lin_stop_index])]) for i in data]
@@ -494,12 +507,12 @@ class APS:
         datanames=[['HOMO']]
         x=[[i.name for i in data]]
         y=[[-i.homo for i in data]]
-        z=[[i.std_homo*i.homo for i in data]]
+        z=[[i.std_homo for i in data]]
         save_csv_for_origin((x,y,z),location,filename,datanames,origin_header)
         
     @staticmethod
     def save_DOS_csv(data,location,filename='DOS'):
-        origin_header=[['Energy','DOS'],['eV','a.u.']]
+        origin_header=[['Energy','DOS'],['eV','arb. unit']]
         datanames=[[i.name] for i in data]
         x,y=[i.energy for i in data],[i.DOS for i in data]
         save_csv_for_origin((x,y),location,filename,datanames,origin_header)
@@ -522,6 +535,25 @@ class APS:
             raise ValueError('y_scale must be larger than 0.')
         return erf((x-cutoff)*scale)*(1-y0)/2+(1+y0)/2
     
+    @staticmethod
+    def _line_x0(x:list[float],slope:float,x0:float)->list[float]:
+        '''
+        This function redefine the linear equation for fitting.
+        
+        parameters
+        ----------
+        x : list[float]
+            the x values
+        slope: float
+            the slope of the line
+        x0: float
+            the x-intercept of the line
+        Returns : list[float]
+            the y value for each x input on line
+        -------
+        '''
+        return x*slope-x0*slope
+        
 class dwf:
     allowed_kwargs=[]
     _calibrated=False
@@ -581,18 +613,20 @@ class dwf:
     @classmethod
     def import_from_files(cls,filenames,trunc=-4,**kwargs):
         data=[]
-        save_index=[-3,2]
         for file in filenames:
             with open(file,'r',newline='') as f:
                 reader=csv.reader(f)
+                first_row=next(reader)
+                time_ind=first_row.index('Time(Secs)')
+                wf_ind=first_row.index('WF (mV)')
                 for i,j in enumerate(reader):
                     if len(j)==1:
                         stopindex=i
                         break
                 f.seek(0)
                 acceptlines=range(1,stopindex)
-                temp=np.array([[float(j[save_index[0]]),
-                                float(j[save_index[1]])] 
+                temp=np.array([[float(j[time_ind]),
+                                float(j[wf_ind])] 
                                for i,j in enumerate(reader) 
                                if i in acceptlines])
             data.append(cls(temp[:,0],temp[:,1],split(file)[1][:trunc],**kwargs))
@@ -717,7 +751,7 @@ class spv(dwf):
         if not all([i.is_normalized for i in data]):
             print('Use first light on for normalization')
             _=[i.normalize() for i in data]
-        origin_header=[['Time','Normalized SPV'],['s','a.u.']]
+        origin_header=[['Time','Normalized SPV'],['s','']]
         datanames=[[i.name] for i in data]
         x=[i.time for i in data]
         y=[i.norm_spv for i in data]

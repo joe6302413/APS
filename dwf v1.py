@@ -26,22 +26,22 @@ from apsmodule import dwf, APS, calibrate
 APSdir=normpath(getenv('OneDrive')+'\\Data\\APS') if getenv('OneDrive')!=None \
     else ''
 
-#%% Clean filenames
-filenames=[]
+#%% Clean cpdfiles
+cpdfiles=[]
 
 #%% Choose files
 root=tk.Tk()
 # root.withdraw()
 # root.iconify()
 # root.call('wm', 'attributes', '.', '-topmost', True)
-filenames+=tk.filedialog.askopenfilenames(parent=root, initialdir=APSdir, title='Please select dwf files',filetypes=[('DAT','.DAT')])
+cpdfiles+=tk.filedialog.askopenfilenames(parent=root, initialdir=APSdir, title='Please select dwf files',filetypes=[('DAT','.DAT')])
 root.destroy()
-location=split(filenames[0])[0]
+location=split(cpdfiles[0])[0]
 
-#%% Load files into data
+#%% Load files into cpddata
 plt.close('all')
-data=[]
-data+=dwf.import_from_files(filenames,trunc=-8)
+cpddata=[]
+cpddata+=dwf.import_from_files(cpdfiles,trunc=-8)
 
 #%% Choose ref APS,dwf and load it
 root=tk.Tk()
@@ -70,12 +70,12 @@ ref_dwf.dwf_stat(length=200)
 #%% Load calibration object
 cal=calibrate(ref_APS,ref_dwf)
 
-#%% Calibrate dwf data
-cal.cal(data)
+#%% Calibrate dwf cpddata
+cal.cal(cpddata)
 
-#%% Calculate statistic data
-for i in data:  i.dwf_stat(length=200)
+#%% Calculate statistic cpddata
+for i in cpddata:  i.dwf_stat(length=200)
 
 #%% Save calibrated DWF into file
-dwf.save_csv(data,location,filename='DWF')
-dwf.save_dwf_stat_csv(data,location)
+dwf.save_csv(cpddata,location,filename='DWF')
+dwf.save_dwf_stat_csv(cpddata,location)

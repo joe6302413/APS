@@ -26,39 +26,39 @@ from apsmodule import spv
 APSdir=normpath(getenv('OneDrive')+'\\Data\\APS') if getenv('OneDrive')!=None \
     else ''
 
-#%% Clean filenames
-filenames=[]
+#%% Clean spvfiles
+spvfiles=[]
 
 #%% Choose files
 root=tk.Tk()
 # root.withdraw()
 # root.iconify()
 # root.call('wm', 'attributes', '.', '-topmost', True)
-filenames+=tk.filedialog.askopenfilenames(parent=root,initialdir=APSdir, title='Please select SPV files',filetypes=[('DAT','.DAT')])
+spvfiles+=tk.filedialog.askopenfilenames(parent=root,initialdir=APSdir, title='Please select SPV files',filetypes=[('DAT','.DAT')])
 root.destroy()
-location=split(filenames[0])[0]
+location=split(spvfiles[0])[0]
 
-#%% Load files into data
+#%% Load files into spvdata
 plt.close('all')
-data=[]
-data+=spv.import_from_files(filenames,timemap=(20,100,150,100,150),trunc=-8)
+spvdata=[]
+spvdata+=spv.import_from_files(spvfiles,timemap=(20,100,150,100,150),trunc=-8)
 
 #%% Calibrate background SPV
-for i in data:  i.cal_background(plot=False)
+for i in spvdata:  i.cal_background(plot=False)
 
 #%% Plot SPV overlay
 plt.figure('SPV overlay')
-for i in data: i.plot()
+for i in spvdata: i.plot()
 
 #%% Save SPV into csv
-spv.save_csv(data,location,filename='SPV')
+spv.save_csv(spvdata,location,filename='SPV')
 
 #%% Normalized SPV
-for i in data: i.normalize(plot=False)
+for i in spvdata: i.normalize(plot=False)
 
 #%% Plot normalized SPV overlay
 plt.figure('normalized SPV overlay')
-for i in data: i.norm_plot()
+for i in spvdata: i.norm_plot()
 
 #%% Save normalized SPV into csv
-spv.save_norm_spv_csv(data,location)
+spv.save_norm_spv_csv(spvdata,location)
