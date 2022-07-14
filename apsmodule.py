@@ -314,21 +314,19 @@ class APS:
         stop=len(self.energy)-next(i for i,j in enumerate(
             self.pes_base[::-1]) if j<fit_upper_bound)
         self.std_homo=np.inf
-        for i,j in [[i,j] for i in range(start,stop) 
-                    for j in range(i+points,stop)]:
-            try:
-                p=np.polyfit(self.energy[i:j],self.pes_base[i:j],1)
-                p=np.array([p[0],-p[1]/p[0]])
-                [slope,x_intercept],[[_,_],[_,var_x_intercept]]=curve_fit(
-                    APS._line_x0,self.energy[i:j],self.pes_base[i:j],
-                    p0=p,bounds=(p-1e-3,p+1e-3))
-                std_homo=var_x_intercept**0.5
-                if std_homo<self.std_homo:
-                    self.lin_start_index,self.lin_stop_index=i,j
-                    self.lin_par,self.std_homo=(slope,-x_intercept*slope),std_homo
-                    self.homo=x_intercept
-            except RuntimeError:
-                pass
+        for i,j in [[i,j] for i in range(start,stop) for j in 
+                    range(i+points,stop)]:
+            x,y=self.energy[i:j],self.pes_base[i:j]
+            fit=np.polyfit(x,y,1)
+            x_intcp=-fit[1]/fit[0]
+            sig_square=((np.polyval(fit,x)-y)**2).sum()/(j-i-2)
+            X=np.concatenate(([x-x_intcp],[np.repeat(-fit[0],j-i)]),0)
+            [[_,_],[_,var_homo]]=np.linalg.inv(X.dot(X.T))*sig_square
+            std_homo=var_homo**0.5
+            if std_homo<self.std_homo:
+                self.lin_start_index,self.lin_stop_index=i,j
+                self.lin_par,self.std_homo=fit,std_homo
+                self.homo=x_intcp
         if self.std_homo==np.inf:
             plt.figure()
             self.plot(f"{self.name} fitting fail!!!")
@@ -534,25 +532,6 @@ class APS:
         if y0<0:
             raise ValueError('y_scale must be larger than 0.')
         return erf((x-cutoff)*scale)*(1-y0)/2+(1+y0)/2
-    
-    @staticmethod
-    def _line_x0(x:list[float],slope:float,x0:float)->list[float]:
-        '''
-        This function redefine the linear equation for fitting.
-        
-        parameters
-        ----------
-        x : list[float]
-            the x values
-        slope: float
-            the slope of the line
-        x0: float
-            the x-intercept of the line
-        Returns : list[float]
-            the y value for each x input on line
-        -------
-        '''
-        return x*slope-x0*slope
         
 class dwf:
     allowed_kwargs=[]
