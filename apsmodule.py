@@ -568,7 +568,7 @@ class dwf:
         summary+='\n'.join([f'{i}:\t{j}' for i,j in self.status.items()])+'\n'
         if self._has_statistics==True:
             summary+=f'Statistic region:\tlast {self.length}'\
-                f's\naverage:\t{self.average_CPD:.2f}\u00b1{self.std_CPD:.2f}eV\n'
+                f's\naverage:\t{self.average_CPD:.3f}\u00b1{self.std_CPD:.3f}eV\n'
         return summary
             
     def plot(self):
