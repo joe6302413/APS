@@ -31,7 +31,7 @@ from typing import List,Tuple
 import tkinter as tk
 from tkinter.filedialog import asksaveasfilename
 
-__version__='1.1.2'
+__version__='1.2'
 
 def save_csv_for_origin(data:Tuple[List[List[float]]],location:str,
                         filename:str=None,datanames:List[List[str]]=None,
@@ -56,7 +56,8 @@ def save_csv_for_origin(data:Tuple[List[List[float]]],location:str,
         root.destroy()
         
     data_dim=len(data)
-    assert [len(i) for i in data][1:]==[len(i) for i in data][:-1], 'number of data mismatch'
+    assert [len(i) for i in data][1:]==[len(i) for i in data][:-1], \
+        'number of data mismatch'
     assert len(header[0])==data_dim, 'header mismatch data dimension'
     numberofdata=len(data[0])
     data=[j for i in zip(*data) for j in i]
@@ -119,12 +120,31 @@ class APS:
         self._pes_raw=np.array(pes_raw)
         self.name=Name
         self._DOS=self.DOS_raw
-        self._status={'sqrt': bool(sqrt),'baseline':False,
-                     'cutoff': False,'analyzed':False, 'DOS smoothed': False}
+        self._sqrt=bool(sqrt)
+    
+    @property
+    def sqrt(self):
+        return self._sqrt
     
     @property
     def status(self):
-        return self._status
+        return {'sqrt': self.sqrt,'baseline':self.baseline if \
+                      hasattr(self,'_baseline') else False,
+                      'cutoff': self._has_cutoff,
+                      'analyzed':self._is_analyzed,
+                      'DOS smoothed': self._is_DOS_smoothed}
+    
+    @property
+    def _is_analyzed(self):
+        return True if hasattr(self,'homo') else False
+    
+    @property
+    def _is_DOS_smoothed(self):
+        return True if (self._DOS!=self.DOS_raw).any() else False
+    
+    @property
+    def _has_cutoff(self):
+        return True if hasattr(self,'_cutoff_index') else False
     
     @property
     def pes_raw(self):
@@ -193,8 +213,9 @@ class APS:
     def __str__(self):
         summary=f'Name:\t{self.name}\n'
         summary+='\n'.join([f'{i}:\t{j}' for i,j in self.status.items()])+'\n'
-        if self.status['analyzed']==True:
-            summary+=f'HOMO(eV):\t{self.homo:.2f}\u00b1{self.homo*self.std_homo:.2f}eV\n'
+        if self._is_analyzed:
+            summary+=f'HOMO(eV):\t{self.homo:.2f}\u00b1'\
+                f'{self.std_homo:.4f} eV\n'
         return summary
                
     def pick_range(self):
@@ -208,34 +229,6 @@ class APS:
         minindex=next(p for p,q in enumerate(self.energy) if q>self.xmin)
         maxindex=next(p for p,q in enumerate(self.energy) if q>self.xmax)
         return minindex,maxindex
-    
-    def status_check(self):
-        report=''
-        if hasattr(self,'_baseline'):
-            if not self.status['baseline']==float(self.baseline):
-                report+='Baseline is corrupted!\nRedo self.find_baseline'\
-                    '(baseline_bounds) and self.find_cutoff()\n'
-        elif self.status['baseline']:
-            report+='Baseline is corrupted!\nRedo self.find_baseline'\
-                    '(baseline_bounds) and self.find_cutoff()\n'
-        if self.status['cutoff']!=hasattr(self,'_cutoff_index'):
-            report+='Cutoff is corrupted!\nRedo self.find_cutoff()\n'
-        if self.status['analyzed']!=hasattr(self,'homo'):
-            report+='Analaysis is corrupted!\nRedo self.analyze('\
-                'fit_lower_bound,fit_upper_bound)\n'
-        if self.status['DOS smoothed']:
-            if all(self.DOS==self.DOS_raw):
-                report+='DOS smmoothing is corrupted!\nRedo self.DOSsmooth('\
-                    'pts,power,scale=)\n'
-        else:
-            if any(self.DOS!=self.DOS_raw):
-                self._DOS=self.DOS_raw
-                report+='DOS seems smoothed but not recorded!\nDOS reseted\n'
-        if report=='':
-            print(f'{self.name}\n--------\nCheck done and all statuses are '\
-                  'good!')
-        else:
-            print(f'{self.name}\n--------\n{report}')
         
     # def read_gaussian_MO(self,MOenergy):
     #     self.MOenergy=MOenergy
@@ -246,8 +239,7 @@ class APS:
         if baseline_res.x in baseline_bounds:
             raise ValueError(f'Found baseline is on the boundary ({baseline_res.x[0]}). '\
                              'Please rerun with better baseline_bounds.')
-        self._baseline=baseline_res.x
-        self.status['baseline']=float(self.baseline)
+        self._baseline=baseline_res.x[0]
         if plot==True:
             plt.figure()
             self.plot()
@@ -260,37 +252,35 @@ class APS:
             raise ValueError('Baseline was not correct. Please redo '\
                              'find_baseline.')
         self._cutoff_index,self._cutoff_energy=index,self.energy[index]
-        self.status['cutoff']=True
         
     def plot(self):
         plt.grid(True,which='both',axis='x')
         fig=plt.plot(self.energy,self.pes,label=self.name)
         plt.axhline(y=0, color='k',ls='--')
-        if hasattr(self,'lin_par'):
+        if self._is_analyzed:
             plt.plot([self.homo,self.energy[self.lin_stop_index]],
                      [0,np.polyval(self.lin_par,self.energy[
                          self.lin_stop_index])],'--',c=fig[0]._color)
-        if hasattr(self,'fit_par') and hasattr(self,'APSfit'):
-            plt.plot(self.energy,self.APSfit,label=
-                     f'fit: c={self.fit_par[0]:.4f}, shift={self.fit_par[1]:.4f}'\
-                         f', scale={self.fit_par[2]:.1f}')
+        # if hasattr(self,'fit_par') and hasattr(self,'APSfit'):
+        #     plt.plot(self.energy,self.APSfit,label=
+        #              f'fit: c={self.fit_par[0]:.4f}, shift={self.fit_par[1]:.4f}'\
+        #                  f', scale={self.fit_par[2]:.1f}')
         plt.legend()
         plt.xlabel('Energy (eV)')
-        if self.status['sqrt']==False:
-            plt.ylabel('Photoemission$^{1/3}$  (a.u.)')
+        if not self.sqrt:
+            plt.ylabel('Photoemission$^{1/3}$  (arb. unit)')
         else:
-            plt.ylabel('Photoemission$^{1/2}$  (a.u.)')
+            plt.ylabel('Photoemission$^{1/2}$  (arb.unit)')
         plt.autoscale(enable=True,axis='both',tight=True)
         plt.gca().set_ylim(bottom=-0.5)
             
     def DOSsmooth(self,*args,scale=4.122623,y0=0.1,plot=False,**kwargs):
         shift=0.053547 #this value is derived from empirical measurements
-        self._DOS=savgol_filter(self.DOS_raw,*args,**kwargs)
         cutoff=self.cutoff_energy+shift
-        self._DOS*=self.erfsmooth(self.energy,scale,cutoff,y0)
-        self.status['DOS smoothed']=True
+        self._DOS=self.DOS_raw*self.erfsmooth(self.energy,scale,cutoff,y0)
+        self._DOS=savgol_filter(self._DOS,*args,**kwargs)
         if plot:
-            plt.figure()
+            plt.figure(f'{self.name} DOS smooth')
             self.DOSplot()
             # index=self.cutoff_index-5
             _=plt.plot(self.energy,self.DOS_raw,'o-',
@@ -307,13 +297,13 @@ class APS:
         plt.gca().set_ylim(bottom=-0.5)
         plt.legend()
         plt.xlabel('Energy (eV)')
-        plt.ylabel('DOS (a.u.)')
+        plt.ylabel('DOS (arb. unit)')
         
-    def analyze(self, fit_lower_bound=0.5,fit_upper_bound=np.inf,smoothness=2,
+    def analyze(self, fit_lower_bound=0.5,fit_upper_bound=np.inf,points=7,
                 plot=True):
-        if smoothness==1:   gap=5
-        elif smoothness==2: gap=7
-        else: gap=10
+        if points<=2:
+            raise Exception('Linear fit must contain more than 2 points to be'\
+            'meaningful.')
         try:
             start=len(self.energy)-next(i for i,j in enumerate(
                 self.pes_base[::-1]) if j<fit_lower_bound)-1
@@ -324,32 +314,36 @@ class APS:
         stop=len(self.energy)-next(i for i,j in enumerate(
             self.pes_base[::-1]) if j<fit_upper_bound)
         self.std_homo=np.inf
-        for i,j in [[i,j] for i in range(start,stop) 
-                    for j in range(i+gap,stop)]:
-            [slope,intercept],[[var_slope,_],[_,var_intercept]]=np.polyfit(
-                self.energy[i:j],self.pes_base[i:j],1,cov=True)
-            std_homo=np.sqrt(var_slope/slope**2+var_intercept/intercept**2)
+        for i,j in [[i,j] for i in range(start,stop) for j in 
+                    range(i+points,stop)]:
+            x,y=self.energy[i:j],self.pes_base[i:j]
+            fit=np.polyfit(x,y,1)
+            x_intcp=-fit[1]/fit[0]
+            sig_square=((np.polyval(fit,x)-y)**2).sum()/(j-i-2)
+            X=np.concatenate(([x-x_intcp],[np.repeat(-fit[0],j-i)]),0)
+            [[_,_],[_,var_homo]]=np.linalg.inv(X.dot(X.T))*sig_square
+            std_homo=var_homo**0.5
             if std_homo<self.std_homo:
                 self.lin_start_index,self.lin_stop_index=i,j
-                self.lin_par,self.std_homo=(slope,intercept),std_homo
+                self.lin_par,self.std_homo=fit,std_homo
+                self.homo=x_intcp
         if self.std_homo==np.inf:
             plt.figure()
-            self.plot()
+            self.plot(f"{self.name} fitting fail!!!")
             raise Exception("Fitting fail!!! Rechoose fitting condition.")
-        self.homo=-self.lin_par[1]/self.lin_par[0]
-        self.status['analyzed']=True
         if plot:
-            fig=plt.figure()
+            fig=plt.figure(f'{self.name} APS plot')
             ax=fig.gca()
             self.plot()
             plt.title(self.name)
-            plt.text(.5, .95, f'HOMO={self.homo:.2f}\u00b1 {self.std_homo*100:.3f}%' 
+            plt.text(.5, .95, f'HOMO={self.homo:.2f}\u00b1 '\
+                     f'{self.std_homo:.4f} eV' 
                      , style='italic',
                      bbox={'facecolor': 'yellow', 'alpha': 0.5},
                      horizontalalignment='center',verticalalignment='center',
                      transform=ax.transAxes)
             ax.legend().remove()
-        if self.lin_stop_index-self.lin_start_index==gap:
+        if self.lin_stop_index-self.lin_start_index==points:
             print(self.name+' is using the minimum number of points\t')
     
     def DOSfit(self,p0):
@@ -379,7 +373,7 @@ class APS:
         MOfit=self.MOfit_par[0]*self.mofun(self.energy,self.MOfit_par[1],self.MOenergy+self.MOfit_par[-1])
         plt.plot(self.energy,MOfit,label='fit: scale=%2.1f, c=%1.4f, shift=%1.4f' %tuple(self.MOfit_par))
         plt.xlabel('Energy (eV)')
-        plt.ylabel('Photoemission^1/3 (a.u.)')
+        plt.ylabel('Photoemission^1/3 (arb. unit)')
         plt.legend()
         plt.title('FitAPS')
         print('scale=%1.4f, broaden facter=%1.4f, shift=%2.1f' %tuple(self.MOfit_par))
@@ -402,10 +396,16 @@ class APS:
                         if not float(j[3])<1e4:
                             stopindex=i
                             break
-                    except:
+                    except ValueError:
+                        pass
+                    except IndexError:
                         if j[0][:3]==' WF':
+                        # if i!=0:
                             stopindex=i
                             break
+                        else:
+                            raise ValueError(f'{file} does not have the right'\
+                                             ' format from APS04')
                 f.seek(0)
                 acceptlines=range(1,stopindex)
                 save_index=[2,6] if sqrt_type else [2,7]
@@ -424,19 +424,27 @@ class APS:
         return APS_obj
 
     @staticmethod
-    def lc_DOS(data,coeff,cov,sqrt=False,Name='linear_combination'):
+    def group_sqrt(data):
+        sqrt_list=(i.sqrt for i in data)
+        if not all(sqrt_list) and any(sqrt_list):
+            raise Exception('data has not uniform sqrt type.')
+        else:
+            return data[0].sqrt
+    
+    @staticmethod
+    def lc_DOS(data,coeff,cov,Name='linear_combination'):
         '''
         linear combine the DOS of each data element with coeff.
         ----
         data=[data1,data2,...] where each element is an APS object
         coeff is a list or tuple of n-element [coeff1,coeff2,...]
+        cov is a list or tuple of the covariant of the coefficients
         fmt has option 'd' (data) or 'o' (object).
         d will output (energy,DOS) and o will output APS_object
-        **kwargs are sqrt and/or Name for APS object.
+        Name for the output APS object.
         '''
         assert len(data)==len(coeff), 'Dimension mismatch'
-        assert all(data[i].status['sqrt']==data[i+1].status['sqrt'] 
-                   for i in range(len(data)-1)),'data has to be the same sqrt type'
+        sqrt=APS.group_sqrt(data)
         energy,DOS=[i.energy for i in data],[i.DOS for i in data]
         energy,DOS=find_overlap(energy,DOS)
         DOS=np.dot(coeff,DOS)
@@ -476,14 +484,15 @@ class APS:
     @staticmethod
     def save_aps_csv(data,location,filename='APS'):
         datanames=[[i.name] for i in data]
-        origin_header=[['Energy','Photoemission\\+(1/3)'],['eV','a.u.']] if all([i.status['sqrt']==False for i in data]) else [['Energy','Photoemission\\+(1/2)'],['eV','a.u.']]
+        origin_header=[['Energy','Photoemission\\+(1/3)'],['eV','arb. unit']] if \
+        all([i.sqrt==False for i in data]) else [['Energy','Photoemission\\+(1/2)'],['eV','arb. unit']]
         x,y=[i.energy for i in data],[i.pes for i in data]
         save_csv_for_origin((x,y),location,filename,datanames,origin_header)
 
     @staticmethod
     def save_aps_fit_csv(data,location,filename='APS_linear_regression'):
-        assert all(i.status['analyzed'] for i in data), 'Input not yet analyzed'
-        origin_header=[['Energy','Photoemission\\+(1/3)'],['eV','a.u.']] if all([i.status['sqrt']==False for i in data]) else [['Energy','Photoemission\\+(1/2)'],['eV','a.u.']]
+        assert all(i._is_analyzed for i in data), 'Input not yet analyzed'
+        origin_header=[['Energy','Photoemission\\+(1/3)'],['eV','arb. unit']] if all([i.sqrt==False for i in data]) else [['Energy','Photoemission\\+(1/2)'],['eV','arb. unit']]
         datanames=[[i.name] for i in data]
         x=[np.array([i.homo,i.energy[i.lin_stop_index]]) for i in data]
         y=[np.array([0,np.polyval(i.lin_par,i.energy[i.lin_stop_index])]) for i in data]
@@ -491,17 +500,17 @@ class APS:
     
     @staticmethod
     def save_homo_error_csv(data,location,filename='APS_HOMO'):
-        assert all(i.status['analyzed'] for i in data), 'Input not yet analyze'
+        assert all(i._is_analyzed for i in data), 'Input not yet analyze'
         origin_header=[['Material','Energy','HOMO std'],[None,'eV','eV']]
         datanames=[['HOMO']]
         x=[[i.name for i in data]]
         y=[[-i.homo for i in data]]
-        z=[[i.std_homo*i.homo for i in data]]
+        z=[[i.std_homo for i in data]]
         save_csv_for_origin((x,y,z),location,filename,datanames,origin_header)
         
     @staticmethod
     def save_DOS_csv(data,location,filename='DOS'):
-        origin_header=[['Energy','DOS'],['eV','a.u.']]
+        origin_header=[['Energy','DOS'],['eV','arb. unit']]
         datanames=[[i.name] for i in data]
         x,y=[i.energy for i in data],[i.DOS for i in data]
         save_csv_for_origin((x,y),location,filename,datanames,origin_header)
@@ -523,9 +532,10 @@ class APS:
         if y0<0:
             raise ValueError('y_scale must be larger than 0.')
         return erf((x-cutoff)*scale)*(1-y0)/2+(1+y0)/2
-    
+        
 class dwf:
     allowed_kwargs=[]
+    _calibrated=False
     def __init__(self,time,CPDdata,name='no_name',**kwargs):
         self.time=np.array(time)
         self.CPDdata=np.array(CPDdata)
@@ -536,35 +546,34 @@ class dwf:
         except KeyError:
             raise Exception('expect key words '+','.join(self.allowed_kwargs)
                             + ' missing')
-        self.status={'calibrated':False, 'statistics':False}
-        
+    
+    @property
+    def status(self):
+        return {'calibrated':self._is_calibrated,
+                'statistics':self._has_statistics}
+    
+    @property
+    def _is_calibrated(self):
+        return self._calibrated
+    
+    @property
+    def _has_statistics(self):
+        return True if hasattr(self,'average_CPD') else False
+    
     def __repr__(self):
         return self.name
     
     def __str__(self):
         summary='Name:\t'+self.name+'\n'
         summary+='\n'.join([f'{i}:\t{j}' for i,j in self.status.items()])+'\n'
-        if self.status['statistics']==True:
+        if self._has_statistics==True:
             summary+=f'Statistic region:\tlast {self.length}'\
-                f's\naverage:\t{self.average_CPD:.2f}\u00b1{self.std_CPD:.2f}eV\n'
+                f's\naverage:\t{self.average_CPD:.3f}\u00b1{self.std_CPD:.3f}eV\n'
         return summary
-    
-    def status_check(self):
-        report=''
-        if self.status['calibrated']!=(self.data_type=='Fermi level'):
-            report+='Calibration is corrupted!\nRedo calibration\n'
-        if self.status['statistics']!=hasattr(self,'average_CPD'):
-            report+='Statistic is corrupted!\nRedo self.dwf_stat('\
-                'length)\n'
-        if report=='':
-            print(f'{self.name}\n--------\nCheck done and all statuses are '\
-                  'good!\n')
-        else:
-            print(f'{self.name}\n--------\n{report}')
             
     def plot(self):
-        plt.grid(True,which='both',axis='both')
         plt.plot(self.time,self.CPDdata,label=self.name)
+        plt.grid(True,which='both',axis='both')
         plt.ylabel(f'{self.data_type} ({self.data_unit})')
         plt.legend()
         plt.xlabel('Time(s)')
@@ -579,23 +588,24 @@ class dwf:
         self.average_CPD=np.average(self.CPDdata[start:])
         self.std_CPD=np.std(self.CPDdata[start:])
         self.length=length
-        self.status['statistics']=True
             
     @classmethod
     def import_from_files(cls,filenames,trunc=-4,**kwargs):
         data=[]
-        save_index=[-3,2]
         for file in filenames:
             with open(file,'r',newline='') as f:
                 reader=csv.reader(f)
+                first_row=next(reader)
+                time_ind=first_row.index('Time(Secs)')
+                wf_ind=first_row.index('WF (mV)')
                 for i,j in enumerate(reader):
                     if len(j)==1:
                         stopindex=i
                         break
                 f.seek(0)
                 acceptlines=range(1,stopindex)
-                temp=np.array([[float(j[save_index[0]]),
-                                float(j[save_index[1]])] 
+                temp=np.array([[float(j[time_ind]),
+                                float(j[wf_ind])] 
                                for i,j in enumerate(reader) 
                                if i in acceptlines])
             data.append(cls(temp[:,0],temp[:,1],split(file)[1][:trunc],**kwargs))
@@ -613,7 +623,7 @@ class dwf:
     @staticmethod
     def save_dwf_stat_csv(data,location,filename='DWF_stat'):
         assert all([data[i].__class__==data[i+1].__class__ for i in range(len(data)-1)]), 'Data are not the same class objects'
-        if not all([i.status['statistics'] for i in data]):
+        if not all([i._has_statistics for i in data]):
             print('Use last 200sec data for statistic analysis')
             _=[i.dwf_stat() for i in data]
         origin_header=[['Material','Energy',data[0].data_type+' std'],[None,data[0].data_unit,data[0].data_unit]]  
@@ -625,11 +635,12 @@ class dwf:
         
 class calibrate:
     def __init__(self,ref_APS,ref_dwf):
-        assert hasattr(ref_APS,'homo'),'Analyze ref. APS by ref_APS.analyze()'
-        assert hasattr(ref_dwf,'average_CPD'), \
-            'Find average CPD by ref_dwf.dwf_stat()'
+        if not ref_APS._is_analyzed:
+            raise Exception('Analyze ref. APS first by ref_APS.analyze()')
+        if not ref_dwf._has_statistics:
+            raise Exception('Find average CPD by ref_dwf.dwf_stat()')
         self.tip_dwf=-ref_APS.homo+ref_dwf.average_CPD/1000
-        self.name=(ref_APS.name,ref_dwf.name)
+        self.name=f'{ref_APS}\n{ref_dwf}'
     
     def __repr__(self):
         return self.name
@@ -643,7 +654,7 @@ class calibrate:
         for i in data:
             i.CPDdata=-i.CPDdata/1000+self.tip_dwf
             i.data_type,i.data_unit='Fermi level','eV'
-            i.status['calibrated']=True
+            i._calibrated=True
             i.ref_dwf=self.tip_dwf
 
 class spv(dwf):
@@ -656,56 +667,54 @@ class spv(dwf):
         self.timeline_index.insert(0,0)
         self.timeline_index.append(len(self.time)-1)
         self.data_type,self.data_unit='raw SPV','meV'
-        self.status={'background calibrated':False, 'normalized':False}
+    
+    @property
+    def status(self):
+        return {'background calibrated':self.bg_calibrated,
+                'normalized':self.is_normalized}
+    
+    @property
+    def bg_calibrated(self):
+        return True if hasattr(self,'bg_cpd') else False
+    
+    @property
+    def is_normalized(self):
+        return True if hasattr(self,'norm_spv') else False
     
     def __str__(self):
         summary='Name:\t'+self.name+'\n'
         summary+='\n'.join([i+':\t'+str(j) for i,j in self.status.items()])+'\n'
         summary+='timemap:'+str(self.timemap)+'\n'
         return summary
-    
-    def status_check(self):
-        report=''
-        if self.status['background calibrated']!=(self.data_type=='SPV'):
-            report+='Background calibration is corrupted!\nRedo self.cal_background()\n'
-        if self.status['normalized']!=hasattr(self,'norm_spv'):
-            report+='Noamlization is corrupted!\nRedo self.normalize('\
-                'timezone,plot)\n'
-        if report=='':
-            print(self.name+'\n--------\nCheck done and all statuses are '\
-                  'good!\n')
-        else:
-            print(self.name+'\n--------\n'+report)
             
     def cal_background(self,plot=False):
         self.bg_cpd=np.average(self.CPDdata[0:self.timeline_index[1]])
         self.CPDdata=self.CPDdata-self.bg_cpd
         self.data_type='SPV'
-        self.status['background calibrated']=True
         if plot:
             plt.figure()
             self.plot()
         
     def normalize(self,timezone=1,plot=False):
-        if not self.status['background calibrated']:
+        if not self.bg_calibrated:
             self.cal_background()
         self.norm_zone=timezone
         scale_fac=max(abs(self.CPDdata[self.timeline_index[timezone]:self.timeline_index[timezone+1]]))
         self.norm_spv=self.CPDdata/scale_fac
-        self.status['normalized']=True
         if plot:
             plt.figure()
             self.norm_plot()
     
     def plot(self):
-        dwf.plot(self)
+        super().plot()
         self.plot_highlight()
         
     def norm_plot(self):
-        assert hasattr(self,'norm_spv'),'Didn\'t noramlized yet'
+        if not self.is_normalized:
+            raise Exception(f'{self.name} is not noramlized yet')
         plt.grid(True,which='both',axis='both')
         plt.plot(self.time,self.norm_spv,label=self.name)
-        plt.ylabel('normalized SPV (a.u.)')
+        plt.ylabel('normalized SPV')
         plt.legend()
         plt.xlabel('Time(s)')
         plt.autoscale(enable=True,axis='both',tight=True)
@@ -718,10 +727,10 @@ class spv(dwf):
     @staticmethod
     def save_norm_spv_csv(data,location,filename='Normalized_SPV'):
         assert all([data[i].__class__==data[i+1].__class__ for i in range(len(data)-1)]), 'Data are not the same class objects'
-        if not all([hasattr(i,'norm_spv') for i in data]):
+        if not all([i.is_normalized for i in data]):
             print('Use first light on for normalization')
             _=[i.normalize() for i in data]
-        origin_header=[['Time','Normalized SPV'],['s','a.u.']]
+        origin_header=[['Time','Normalized SPV'],['s','']]
         datanames=[[i.name] for i in data]
         x=[i.time for i in data]
         y=[i.norm_spv for i in data]

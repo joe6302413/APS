@@ -29,46 +29,50 @@ from apsmodule import APS
 APSdir=normpath(getenv('OneDrive')+'\\Data\\APS') if getenv('OneDrive')!=None \
     else ''
 
-#%% clean filenames
-filenames=[]
+#%% clean apsfiles
+apsfiles=[]
 
 #%% choose files
 root=tk.Tk()
 # root.withdraw()
 # root.iconify()
 # root.call('wm', 'attributes', '.', '-topmost', True)
-filenames+=tk.filedialog.askopenfilenames(parent=root,initialdir=APSdir, 
+apsfiles+=tk.filedialog.askopenfilenames(parent=root,initialdir=APSdir, 
                                           title='Please select APS files',
-                                          filetypes=[('DAT','.DAT')])
+                                          filetypes=[('DAT','.DAT'),('','*.*')])
 root.destroy()
 
-#%% load files into data
+#%% load files into apsdata
 plt.close('all')
-data=[]
-data+=APS.import_from_files(filenames,sqrt=False,trunc=-8)
+apsdata=[]
+apsdata+=APS.import_from_files(apsfiles,sqrt=False,trunc=-8)
 
-#%% analyze data
+#%% analyze apsdata
 plt.close('all')
-for i in data:
-    i.analyze(0,99)
+for i in apsdata:
+    i.analyze(0,15)
     
-#%% overlay all the data
+#%% overlay all the apsdata
 fig=plt.figure('APS overlay')
-for i in data: i.plot()
+for i in apsdata: i.plot()
     
 #%% Saving APS and APS fit and HOMO with error
-location=split(filenames[0])[0]
-APS.save_aps_csv(data,location)
-APS.save_aps_fit_csv(data,location)
-APS.save_homo_error_csv(data,location)
+location=split(apsfiles[0])[0]
+APS.save_aps_csv(apsdata,location,filename='Mo2TiC2 sqrt APS')
+APS.save_aps_fit_csv(apsdata,location,filename='Mo2TiC2 sqrt APS_fit')
+APS.save_homo_error_csv(apsdata,location,filename='Mo2TiC2 sqrt APS_HOMO')
+# APS.save_aps_csv(apsdata,location)
+# APS.save_aps_fit_csv(apsdata,location)
+# APS.save_homo_error_csv(apsdata,location)
 
 #%% smoothing DOS
-_=[i.DOSsmooth(7,3,plot=False) for i in data]
+_=[i.DOSsmooth(7,3,plot=True) for i in apsdata]
 
 #%% overlay all the DOS
 plt.figure('DOS')
-for i in data: i.DOSplot()
+for i in apsdata: i.DOSplot()
 
 #%% Saving DOS into csv
-location=split(filenames[0])[0]
-APS.save_DOS_csv(data,location,filename='DOS')
+location=split(apsfiles[0])[0]
+# APS.save_DOS_csv(apsdata,location,filename='Mo2TiC2 sqrt DOS')
+APS.save_DOS_csv(apsdata,location,filename='DOS')
