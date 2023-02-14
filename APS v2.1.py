@@ -50,7 +50,7 @@ apsdata+=APS.import_from_files(apsfiles,sqrt=False,trunc=-8)
 #%% analyze apsdata
 plt.close('all')
 for i in apsdata:
-    i.analyze(0,15)
+    i.analyze(5,20)
     
 #%% overlay all the apsdata
 fig=plt.figure('APS overlay')
@@ -58,12 +58,12 @@ for i in apsdata: i.plot()
     
 #%% Saving APS and APS fit and HOMO with error
 location=split(apsfiles[0])[0]
-APS.save_aps_csv(apsdata,location,filename='Mo2TiC2 sqrt APS')
-APS.save_aps_fit_csv(apsdata,location,filename='Mo2TiC2 sqrt APS_fit')
-APS.save_homo_error_csv(apsdata,location,filename='Mo2TiC2 sqrt APS_HOMO')
-# APS.save_aps_csv(apsdata,location)
-# APS.save_aps_fit_csv(apsdata,location)
-# APS.save_homo_error_csv(apsdata,location)
+# APS.save_aps_csv(apsdata,location,filename='Mo2TiC2 sqrt APS')
+# APS.save_aps_fit_csv(apsdata,location,filename='Mo2TiC2 sqrt APS_fit')
+# APS.save_homo_error_csv(apsdata,location,filename='Mo2TiC2 sqrt APS_HOMO')
+APS.save_aps_csv(apsdata,location)
+APS.save_aps_fit_csv(apsdata,location)
+APS.save_homo_error_csv(apsdata,location)
 
 #%% smoothing DOS
 _=[i.DOSsmooth(7,3,plot=True) for i in apsdata]
