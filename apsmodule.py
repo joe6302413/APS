@@ -348,12 +348,17 @@ class APS:
     
     def DOSfit(self,p0):
         minindex,maxindex=self.pick_range()
-        fit,_=curve_fit(lambda x,scale,c,center: scale*APS.gaussian(x,c,center),self.energy[minindex:maxindex],self.DOS[minindex:maxindex],p0)
+        fit,_=curve_fit(lambda x,scale,c,center: scale*APS.gaussian(x,c,center),
+                        self.energy[minindex:maxindex],
+                        self.DOS[minindex:maxindex],p0)
         plt.figure()
-        plt.plot(self.energy[minindex:maxindex],fit[0]*APS.gaussian(self.energy[minindex:maxindex],*fit[1:3]),label='fit')
+        plt.plot(self.energy[minindex:maxindex],
+                 fit[0]*APS.gaussian(self.energy[minindex:maxindex],
+                                     *fit[1:3]),label='fit')
         self.DOSplot()
 
-    def MOfit(self,p0=[2,0.12,0.2],bounds=([0.01,0.1,-0.5],[1e2,0.3,0.5]),repick=True):
+    def MOfit(self,p0=[2,0.12,0.2],bounds=([0.01,0.1,-0.5],[1e2,0.3,0.5]),
+              repick=True):
         self.p0=p0
         self.bounds=bounds
         if repick:
@@ -363,17 +368,32 @@ class APS:
             assert hasattr(self,'MOfit_range'), 'No previous fitting range!'
             minindex,maxindex=self.MOfit_range
         if not hasattr(self, 'MOenergy'):
-            MOenergy=np.array(input("Input MOs from Gaussian:\n").split(),'float')
+            MOenergy=np.array(input("Input MOs from Gaussian:\n").split(),
+                              'float')
             self.MOenergy=np.abs(MOenergy)
+        else:
+            temp=input("Use previous MO input?\n")
+        if temp in ('yes','y','Yes','Y','True','true'):
+            pass
+        elif temp in ('no','n','No','N','False','false'):
+            MOenergy=np.array(input("Input MOs from Gaussian:\n").split(),
+                              'float')
+            self.MOenergy=np.abs(MOenergy)
+        else:
+            raise ValueError('Input yes or no for Using previous MO input.\n')
         x=self.energy[minindex:maxindex]
         y=self.DOS[minindex:maxindex]
         self.MOfit_par,_ = curve_fit(lambda x,scale,c,shift: scale*self.mofun(x,c,self.MOenergy+shift),x,y,p0=p0,bounds=bounds,absolute_sigma=True,ftol=1e-12)
         plt.figure()
         self.DOSplot()
-        MOfit=self.MOfit_par[0]*self.mofun(self.energy,self.MOfit_par[1],self.MOenergy+self.MOfit_par[-1])
-        plt.plot(self.energy,MOfit,label='fit: scale=%2.1f, c=%1.4f, shift=%1.4f' %tuple(self.MOfit_par))
-        plt.xlabel('Energy (eV)')
-        plt.ylabel('Photoemission^1/3 (arb. unit)')
+        MOfit=self.MOfit_par[0]*self.mofun(self.energy,self.MOfit_par[1],
+                                           self.MOenergy+self.MOfit_par[-1])
+        plt.plot(self.energy,MOfit,label=
+                 'fit: scale=%2.1f, c=%1.4f, shift=%1.4f' 
+                 %tuple(self.MOfit_par))
+        x=np.arange(*self.MOfit_range,1e-3)
+        plt.plot(x,self.mofun(x,0.02,self.MOenergy+self.MOfit_par[-1])
+                 *self.MOfit_par[0])
         plt.legend()
         plt.title('FitAPS')
         print('scale=%1.4f, broaden facter=%1.4f, shift=%2.1f' %tuple(self.MOfit_par))
@@ -390,29 +410,23 @@ class APS:
         #6 is square-root.
         for file,sqrt_type in zip(filenames,sqrt):
             with open(file,'r',newline='') as f:
-                reader=csv.reader(f)
-                for i,j in enumerate(reader):
+                lf=list(csv.reader(f))[1:]
+                for i,j in enumerate(lf):
                     try:
-                        if not float(j[3])<1e4:
-                            stopindex=i
-                            break
-                    except ValueError:
-                        pass
-                    except IndexError:
-                        if j[0][:3]==' WF':
-                        # if i!=0:
-                            stopindex=i
-                            break
+                        if not 'WF' in j[0] and float(j[3])<1e4:
+                            pass
                         else:
-                            raise ValueError(f'{file} does not have the right'\
+                            stopindex=i
+                            break
+                    except:
+                        print(j)
+                        raise ValueError(f'{file} does not have the right'\
                                              ' format from APS04')
-                f.seek(0)
-                acceptlines=range(1,stopindex)
                 save_index=[2,6] if sqrt_type else [2,7]
                 temp=np.array([[float(j[save_index[0]]),
                                 float(j[save_index[1]])] 
-                               for i,j in enumerate(reader)
-                               if i in acceptlines])
+                               for i,j in enumerate(lf)
+                               if i < stopindex])
             data.append(cls(temp[:,0],temp[:,1],sqrt_type,split(file)[1][:trunc]))
         return data
     
@@ -480,7 +494,18 @@ class APS:
                           absolute_sigma=True,bounds=(0,np.inf))
             cov=np.diag(cov)
             return fit,cov
-    
+    @staticmethod
+    def save_all(data,location,filename=''):
+        APS.save_aps_all(data,location,filename=filename)
+        APS.save_DOS_csv(data,location,filename=f'{filename}_DOS')
+        
+    @staticmethod
+    def save_aps_all(data,location,filename=''):
+        APS.save_aps_csv(data,location,filename=f'{filename}_APS')
+        APS.save_aps_fit_csv(data,location,
+                             filename=f'{filename}_APS_linear_regression')
+        APS.save_homo_error_csv(data,location,filename=f'{filename}_APS_HOMO')
+        
     @staticmethod
     def save_aps_csv(data,location,filename='APS'):
         datanames=[[i.name] for i in data]
@@ -522,6 +547,10 @@ class APS:
     @staticmethod
     def mofun(x,c,MOenergy):
         return np.sum([APS.gaussian(x,c,i) for i in MOenergy],axis=0)
+    
+    @staticmethod
+    def mo2dosfun(x,scale,c,MOenergy):
+        return scale*APS.mofun(x,c,MOenergy)
     
     @staticmethod
     def apsfun(x,c,scale,MOenergy):
